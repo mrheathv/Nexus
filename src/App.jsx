@@ -1,139 +1,166 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// ── CARD DEFINITIONS — EVE ONLINE THEMED ─────────────────────────────────────
+// ── CARDS ─────────────────────────────────────────────────────────────────────
 const CARDS = [
-  { id:'merlin',     name:'Merlin',           cost:1, type:'ship',   atk:1, def:1, effect:'Afterburner — engages immediately on deployment.',    color:'#00ccff', icon:'🚀', ability:'haste',       faction:'Caldari'  },
-  { id:'punisher',   name:'Punisher',          cost:2, type:'ship',   atk:2, def:3, effect:'Armor Plates — heavily tanked Amarr frigate.',         color:'#ffaa22', icon:'🛡️', ability:null,          faction:'Amarr'    },
-  { id:'stiletto',   name:'Stiletto',          cost:3, type:'ship',   atk:3, def:2, effect:'Interdiction Nullifier — cannot be caught or blocked.',color:'#cc44ff', icon:'👻', ability:'unblockable', faction:'Minmatar' },
-  { id:'drake',      name:'Drake',             cost:2, type:'ship',   atk:2, def:2, effect:'Missile Salvo — damages enemy ship on warp-in.',       color:'#33ddaa', icon:'🕷️', ability:'zap',         faction:'Caldari'  },
-  { id:'revelation', name:'Revelation',        cost:5, type:'ship',   atk:5, def:5, effect:'Doomsday Device — excess damage bleeds through.',      color:'#ff6633', icon:'🦾', ability:'crush',       faction:'Amarr'    },
-  { id:'disruptor',  name:'Warp Disruptor',    cost:2, type:'module',             effect:'Point a target — deal 3 damage to any ship or pilot.',  color:'#ff3355', icon:'⚡', ability:'damage3'      },
-  { id:'analyzer',   name:'Data Analyzer',     cost:1, type:'module',             effect:'Hack the grid — draw 2 cards from your reserves.',      color:'#44bbff', icon:'📡', ability:'draw2'        },
-  { id:'smartbomb',  name:'Smartbomb',         cost:3, type:'module',             effect:'Area pulse — destroy any one enemy ship.',              color:'#ffaa00', icon:'💥', ability:'destroy'      },
-  { id:'drone_link', name:'Drone Link Amp',    cost:2, type:'module',             effect:'Augment a friendly ship +2 ATK and +2 shield.',         color:'#88ff44', icon:'🧬', ability:'buff'         },
-  { id:'cap_booster',name:'Cap Booster',       cost:0, type:'module',             effect:'Inject capacitor charges — gain 3 extra cap this turn.',color:'#ffdd44', icon:'🔋', ability:'coresurge'    },
+  {id:'merlin',    name:'Merlin',         cost:1,type:'ship',  atk:1,def:2,color:'#00ccff',icon:'🚀',ability:'haste',      faction:'Caldari', defaultRow:'front',effect:'Afterburner · attacks immediately on landing'},
+  {id:'punisher',  name:'Punisher',       cost:2,type:'ship',  atk:1,def:4,color:'#ffaa22',icon:'🛡️',ability:null,         faction:'Amarr',   defaultRow:'front',effect:'Armor Tank · 4 HP front-line wall'},
+  {id:'stiletto',  name:'Stiletto',       cost:3,type:'ship',  atk:3,def:2,color:'#cc44ff',icon:'👻',ability:'unblockable',faction:'Minmatar',defaultRow:'front',effect:'Nullifier · bypasses all blockers, hits pod directly'},
+  {id:'drake',     name:'Drake',          cost:3,type:'ship',  atk:2,def:3,color:'#33ddaa',icon:'🎯',ability:'ranged',     faction:'Caldari', defaultRow:'back', effect:'Heavy Missiles · fires full range from back row'},
+  {id:'revelation',name:'Revelation',     cost:6,type:'ship',  atk:5,def:5,color:'#ff6633',icon:'🦾',ability:'crush',     faction:'Amarr',   defaultRow:'front',effect:'Doomsday Device · excess damage bleeds to enemy pod'},
+  {id:'disruptor', name:'Warp Disruptor', cost:2,type:'module',color:'#ff3355',icon:'⚡',ability:'damage3',effect:'Lock & fire · 3 damage to any ship or pod'},
+  {id:'analyzer',  name:'Data Analyzer',  cost:1,type:'module',color:'#44bbff',icon:'📡',ability:'draw2',  effect:'Scan local · draw 2 cards from reserves'},
+  {id:'smartbomb', name:'Smartbomb',      cost:3,type:'module',color:'#ffaa00',icon:'💥',ability:'destroy',effect:'Area pulse · obliterate any one ship on the field'},
+  {id:'repair',    name:'Remote Repair',  cost:2,type:'module',color:'#88ff44',icon:'🔧',ability:'heal3',  effect:'Remote reps · restore 3 HP to a friendly ship'},
+  {id:'cap_boost', name:'Cap Booster',    cost:0,type:'module',color:'#ffdd44',icon:'🔋',ability:'coresurge',effect:'Charge inject · gain 3 extra cap this turn'},
 ];
 
-const FACTION_COLORS = { Caldari:'#00ccff', Amarr:'#ffaa22', Minmatar:'#cc4422', Gallente:'#44cc66' };
-
-// ── UTILITIES ─────────────────────────────────────────────────────────────────
+// ── UTILS ─────────────────────────────────────────────────────────────────────
 let _uid = 1;
-const uid  = () => _uid++;
+const uid = () => _uid++;
 const shuffle = a => { const b=[...a]; for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]]} return b; };
 const buildDeck = () => shuffle([...CARDS,...CARDS,...CARDS].map(c=>({...c,uid:uid()})));
-const drawN = (g, owner, n) => {
+const drawN = (g,owner,n) => {
   const deck=[...g[owner].deck], hand=[...g[owner].hand];
   for(let i=0;i<n&&deck.length;i++) hand.push(deck.shift());
   return {...g,[owner]:{...g[owner],deck,hand}};
 };
-const addLog = (g, msg) => ({...g, log:[msg,...g.log].slice(0,30)});
 const checkWinner = g => {
   if(g.player.hp<=0) return {...g,winner:'ai',phase:'game-over'};
   if(g.ai.hp<=0)     return {...g,winner:'player',phase:'game-over'};
   return g;
 };
+// field is a flat array; ships have .row = 'front' | 'back'
+const frontOf = field => field.filter(u=>u.row==='front');
+const backOf  = field => field.filter(u=>u.row==='back');
+const addKill = (g,k) => ({...g, kills:[{...k,id:uid()},...g.kills].slice(0,35)});
 
 // ── BACKGROUND CONSTANTS ──────────────────────────────────────────────────────
-const STARS = Array.from({length:70},(_,i)=>({
-  left:`${(i*37+13)%100}%`, top:`${(i*53+7)%100}%`,
-  w:(i%4)*.6+.2, delay:(i%6)*.7, dur:2+(i%5)*.8
+const STARS = Array.from({length:65},(_,i)=>({
+  left:`${(i*37+13)%100}%`,top:`${(i*53+7)%100}%`,
+  w:(i%4)*.55+.2,delay:(i%6)*.7,dur:2+(i%5)*.8
 }));
 const NEBULAE = [
-  {x:'5%',  y:'10%', w:'420px', h:'260px', color:'#1133aa', op:0.055, dur:'22s', delay:'0s'  },
-  {x:'62%', y:'50%', w:'350px', h:'400px', color:'#003366', op:0.045, dur:'28s', delay:'-9s' },
-  {x:'70%', y:'2%',  w:'280px', h:'260px', color:'#220066', op:0.04,  dur:'18s', delay:'-4s' },
-  {x:'20%', y:'68%', w:'340px', h:'220px', color:'#004422', op:0.035, dur:'32s', delay:'-14s'},
-  {x:'40%', y:'25%', w:'220px', h:'220px', color:'#552200', op:0.03,  dur:'24s', delay:'-7s' },
+  {x:'5%', y:'10%',w:'420px',h:'260px',color:'#1133aa',op:.05, dur:'22s',delay:'0s'  },
+  {x:'62%',y:'50%',w:'350px',h:'400px',color:'#003366',op:.04, dur:'28s',delay:'-9s' },
+  {x:'70%',y:'2%', w:'280px',h:'260px',color:'#220066',op:.038,dur:'18s',delay:'-4s' },
+  {x:'20%',y:'68%',w:'340px',h:'220px',color:'#004422',op:.032,dur:'32s',delay:'-14s'},
+  {x:'40%',y:'25%',w:'220px',h:'220px',color:'#552200',op:.028,dur:'24s',delay:'-7s' },
 ];
 
-// ── OPENAI NARRATIVE ──────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are a Scope News Network correspondent embedded in a capsuleer engagement in New Eden. Report combat events as breaking field dispatches.
-
-When given a game event, write EXACTLY 2 sentences in the style of EVE Online lore broadcasts. Requirements:
-- Second person ("your", "you") addressing the capsuleer
-- Reference the specific ship or module by its exact EVE Online name
-- Use EVE terminology: capsuleer, pod, New Eden, CONCORD, warp, grid, local, shields, armor, hull
-- Tone: cold, clinical, terse — like a Scope News ticker mixed with in-game combat logs
-- Never use the word "battle" or "epic"
-- Each dispatch should feel like a CONCORD after-action report fragment`;
-
-async function fetchNarrative(apiKey, event, context) {
-  try {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method:"POST",
-      headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},
-      body: JSON.stringify({
-        model:"gpt-4o-mini", max_tokens:110, temperature:0.85,
-        messages:[
-          {role:"system", content:SYSTEM_PROMPT},
-          {role:"user", content:`COMBAT EVENT: ${event}\n\nSITUATION: Turn ${context.turn}. Your hull integrity: ${context.playerHp}/20. Enemy integrity: ${context.aiHp}/20. Your grid: ${context.playerField||'empty'}. Enemy grid: ${context.aiField||'empty'}.`}
-        ]
-      })
-    });
-    const data = await res.json();
-    if(data.error) return `[SCOPE FEED ERROR: ${data.error.message}]`;
-    return data.choices?.[0]?.message?.content?.trim() || null;
-  } catch(e) { return `[COMMS JAMMED: ${e.message}]`; }
-}
-
-// ── AI OPPONENT ───────────────────────────────────────────────────────────────
+// ── AI LOGIC ──────────────────────────────────────────────────────────────────
 function aiPlay(g) {
-  let hand=[...g.ai.hand],field=[...g.ai.field],pField=[...g.player.field],pHp=g.player.hp,core=g.ai.core;
-  const logs=[],events=[];
+  let hand=[...g.ai.hand], field=[...g.ai.field], aiDeck=[...g.ai.deck];
+  let pField=[...g.player.field], pHp=g.player.hp, core=g.ai.core;
+  const kills=[];
+
   for(const card of [...hand].filter(c=>c.cost<=core).sort((a,b)=>b.cost-a.cost)) {
     if(card.cost>core) continue;
-    core-=card.cost; hand=hand.filter(c=>c.uid!==card.uid);
+    core-=card.cost;
+    hand=hand.filter(c=>c.uid!==card.uid);
+
     if(card.type==='ship') {
-      const unit={...card,currentHp:card.def,tapped:false,justPlayed:true};
-      if(card.ability==='zap'&&pField.length){
-        const t=pField.reduce((a,b)=>a.currentHp<b.currentHp?a:b);
-        pField=pField.map(u=>u.uid===t.uid?{...u,currentHp:u.currentHp-1}:u).filter(u=>u.currentHp>0);
-        logs.push(`🚀 ${card.name} missile salvo hits ${t.name}!`);
-        events.push(`Enemy ${card.name} dropped out of warp and immediately launched missiles into your ${t.name}.`);
-      } else { logs.push(`🚀 Enemy deployed ${card.name}.`); events.push(`An enemy ${card.name} has entered the grid.`); }
-      field.push(unit);
+      const row=card.ability==='ranged'?'back':'front';
+      field.push({...card,currentHp:card.def,tapped:false,justPlayed:true,row});
+      kills.push({text:`⚠ Enemy ${card.name} on grid · ${row.toUpperCase()}`,color:'#3a5570'});
     } else {
-      switch(card.ability){
-        case 'draw2': logs.push(`📡 Enemy used Data Analyzer.`); events.push(`Enemy capsuleer ran a Data Analyzer on the local beacon, pulling two additional modules from reserves.`); break;
-        case 'coresurge': core+=3; logs.push(`🔋 Enemy Cap Booster +3.`); events.push(`Enemy injected capacitor charges. Their systems are running hot.`); break;
-        case 'damage3':
-          if(pField.length){const t=pField.reduce((a,b)=>a.currentHp<b.currentHp?a:b);const hp=t.currentHp-3;pField=pField.map(u=>u.uid===t.uid?{...u,currentHp:hp}:u).filter(u=>u.currentHp>0);logs.push(`⚡ Warp Disruptor → ${t.name} -3`);events.push(`Enemy Warp Disruptor locked your ${t.name}${hp<=0?' and tore through its hull':' for 3 damage'}. CONCORD has logged the engagement.`);}
-          else{pHp-=3;logs.push(`⚡ Warp Disruptor → your hull -3`);events.push(`The enemy Warp Disruptor bypassed your fleet and hit your pod directly for 3 damage.`);}
+      switch(card.ability) {
+        case 'draw2':
+          for(let i=0;i<2&&aiDeck.length;i++) hand.push(aiDeck.shift());
+          kills.push({text:`📡 Enemy Data Analyzer — 2 reserves recovered`,color:'#3a5570'});
           break;
-        case 'destroy':
-          if(pField.length){const t=pField.reduce((a,b)=>a.atk>b.atk?a:b);pField=pField.filter(u=>u.uid!==t.uid);logs.push(`💥 Smartbomb → ${t.name} destroyed`);events.push(`Enemy Smartbomb detonated. Your ${t.name} is a wreck field. Pod is away.`);}
+        case 'coresurge':
+          core+=3;
+          kills.push({text:`🔋 Enemy Cap Booster — +3 capacitor`,color:'#3a5570'});
           break;
-        case 'buff':
-          if(field.length){const t=field.reduce((a,b)=>a.atk>b.atk?a:b);field=field.map(u=>u.uid===t.uid?{...u,atk:u.atk+2,currentHp:u.currentHp+2}:u);logs.push(`🧬 Drone Link → ${t.name} +2/+2`);events.push(`Enemy Drone Link Amplifier brought ${t.name} to full combat readiness. Threat level elevated.`);}
+        case 'damage3': {
+          const front=pField.filter(u=>u.row==='front');
+          const pool=front.length?front:pField.filter(u=>u.row==='back');
+          if(pool.length){
+            const t=pool.reduce((a,b)=>a.currentHp<b.currentHp?a:b);
+            const hp=t.currentHp-3;
+            pField=pField.map(u=>u.uid===t.uid?{...u,currentHp:hp}:u).filter(u=>u.currentHp>0);
+            kills.push(hp<=0
+              ?{text:`⚡ Enemy Disruptor obliterated your ${t.name}`,color:'#ff4444'}
+              :{text:`⚡ Enemy Disruptor hit your ${t.name} · 3 dmg`,color:'#ff7744'});
+          } else {
+            pHp-=3;
+            kills.push({text:`⚡ Enemy Disruptor hit your pod · 3 dmg`,color:'#ff4444'});
+          }
           break;
+        }
+        case 'destroy': {
+          const front=pField.filter(u=>u.row==='front');
+          const pool=front.length?front:pField.filter(u=>u.row==='back');
+          if(pool.length){
+            const t=pool.reduce((a,b)=>a.atk>b.atk?a:b);
+            pField=pField.filter(u=>u.uid!==t.uid);
+            kills.push({text:`💥 Enemy Smartbomb vaporized your ${t.name}`,color:'#ff4444'});
+          }
+          break;
+        }
+        case 'heal3': {
+          if(field.length){
+            const t=field.reduce((a,b)=>a.currentHp<b.currentHp?a:b);
+            field=field.map(u=>u.uid===t.uid?{...u,currentHp:Math.min(u.def,u.currentHp+3)}:u);
+            kills.push({text:`🔧 Enemy Remote Repair repped ${t.name} · +3 HP`,color:'#3a5570'});
+          }
+          break;
+        }
       }
     }
   }
-  return {state:{...g,ai:{...g.ai,hand,field,core},player:{...g.player,field:pField,hp:pHp}},logs,events};
+
+  return {
+    state:{...g,ai:{...g.ai,hand,field,deck:aiDeck,core},player:{...g.player,field:pField,hp:pHp}},
+    kills
+  };
 }
 
 function aiAttack(g) {
-  const atkers=g.ai.field.filter(u=>!u.tapped&&(u.ability==='haste'||!u.justPlayed));
-  if(!atkers.length) return {state:g,logs:[],events:[]};
-  const logs=[`🎯 Enemy fleet engaging: ${atkers.map(u=>u.name).join(', ')}`], events=[];
-  let aiField=[...g.ai.field],pField=[...g.player.field],pHp=g.player.hp;
-  aiField=aiField.map(u=>atkers.find(a=>a.uid===u.uid)?{...u,tapped:true}:u);
-  const used=new Set();
-  for(const atk of atkers){
-    if(atk.ability==='unblockable'){pHp-=atk.atk;logs.push(`👻 ${atk.name} nullified interdiction — ${atk.atk} dmg`);events.push(`Enemy ${atk.name} burned through with its Interdiction Nullifier active. ${atk.atk} damage applied directly to your hull.`);continue;}
-    const blocker=pField.find(u=>!used.has(u.uid));
+  const eligible = [
+    ...frontOf(g.ai.field).filter(u=>!u.tapped&&(!u.justPlayed||u.ability==='haste')),
+    ...backOf(g.ai.field).filter(u=>u.ability==='ranged'&&!u.tapped&&(!u.justPlayed||u.ability==='haste')),
+  ];
+  const seen=new Set();
+  const atkers=eligible.filter(u=>{if(seen.has(u.uid))return false;seen.add(u.uid);return true;});
+  if(!atkers.length) return {state:g,kills:[]};
+
+  let aiField=g.ai.field.map(u=>atkers.find(a=>a.uid===u.uid)?{...u,tapped:true}:u);
+  let pField=[...g.player.field];
+  let pHp=g.player.hp;
+  const kills=[], used=new Set();
+
+  for(const atk of atkers) {
+    if(atk.ability==='unblockable') {
+      pHp-=atk.atk;
+      kills.push({text:`👻 Enemy ${atk.name} NULLIFIER → your pod · ${atk.atk} dmg`,color:'#ff4444'});
+      continue;
+    }
+    const pFront=pField.filter(u=>u.row==='front'&&!used.has(u.uid));
+    const pBack=pField.filter(u=>u.row==='back'&&!used.has(u.uid));
+    const blocker=pFront[0]||pBack[0];
     if(blocker){
       used.add(blocker.uid);
-      const ah=atk.currentHp-blocker.atk,bh=blocker.currentHp-atk.atk;
-      if(ah<=0){aiField=aiField.filter(u=>u.uid!==atk.uid);events.push(`Your ${blocker.name} held tackle on enemy ${atk.name} until its hull gave out. Enemy ship destroyed.`);}
-      else aiField=aiField.map(u=>u.uid===atk.uid?{...u,currentHp:ah}:u);
-      if(bh<=0){if(atk.ability==='crush'&&bh<0){pHp+=bh;events.push(`Enemy ${atk.name} fired its Doomsday Device. Your ${blocker.name} is gone and ${Math.abs(bh)} overflow hit your pod.`);}
-      else events.push(`Enemy ${atk.name} destroyed your ${blocker.name}. Insurance has been notified.`);
-      pField=pField.filter(u=>u.uid!==blocker.uid);}
-      else pField=pField.map(u=>u.uid===blocker.uid?{...u,currentHp:bh}:u);
-    } else {pHp-=atk.atk;logs.push(`💥 ${atk.name} hits your hull for ${atk.atk}`);events.push(`Enemy ${atk.name} broke through with no defenders in range. ${atk.atk} hull damage applied.`);}
+      const ah=atk.currentHp-blocker.atk, bh=blocker.currentHp-atk.atk;
+      if(ah<=0){
+        aiField=aiField.filter(u=>u.uid!==atk.uid);
+        kills.push({text:`✅ Your ${blocker.name} destroyed enemy ${atk.name}`,color:'#44ff88'});
+      }
+      if(bh<=0){
+        if(atk.ability==='crush'&&bh<0){
+          pHp+=bh;
+          kills.push({text:`☠ Enemy ${atk.name} DOOMSDAY · ${blocker.name} + ${Math.abs(bh)} overflow`,color:'#ff4444'});
+        } else {
+          kills.push({text:`☠ Enemy ${atk.name} destroyed your ${blocker.name}`,color:'#ff4444'});
+        }
+        pField=pField.filter(u=>u.uid!==blocker.uid);
+      } else pField=pField.map(u=>u.uid===blocker.uid?{...u,currentHp:bh}:u);
+    } else {
+      pHp-=atk.atk;
+      kills.push({text:`💥 Enemy ${atk.name} → your pod · ${atk.atk} dmg`,color:'#ff4444'});
+    }
   }
-  return {state:{...g,ai:{...g.ai,field:aiField},player:{...g.player,field:pField,hp:pHp}},logs,events};
+  return {state:{...g,ai:{...g.ai,field:aiField},player:{...g.player,field:pField,hp:pHp}},kills};
 }
 
 function runAiTurn(s) {
@@ -141,27 +168,26 @@ function runAiTurn(s) {
   g=drawN(g,'ai',1);
   const newMax=Math.min(10,g.ai.maxCore+1);
   g={...g,ai:{...g.ai,maxCore:newMax,core:newMax,field:g.ai.field.map(u=>({...u,tapped:false,justPlayed:false}))}};
-  const {state:s2,logs:l1,events:e1}=aiPlay(g); g=s2;
-  const {state:s3,logs:l2,events:e2}=aiAttack(g); g=s3;
-  for(const l of [...l1,...l2]) g=addLog(g,l);
+  const {state:s2,kills:k1}=aiPlay(g); g=s2;
+  const {state:s3,kills:k2}=aiAttack(g); g=s3;
+  for(const k of [...k1,...k2]) g=addKill(g,{...k,turn:s.turn});
   g=checkWinner(g);
   if(g.phase!=='game-over'){
-    const t=g.turn+1,pm=Math.min(10,g.player.maxCore+1);
+    const t=g.turn+1, pm=Math.min(10,g.player.maxCore+1);
     g=drawN(g,'player',1);
-    g={...g,phase:'player-play',turn:t,aiThinking:false,attackers:[],selectedCard:null,
+    g={...g,phase:'player-play',turn:t,aiThinking:false,attackers:[],selectedCard:null,pendingDeploy:null,
       player:{...g.player,maxCore:pm,core:pm,field:g.player.field.map(u=>({...u,tapped:false,justPlayed:false}))}};
-    g=addLog(g,`📻 Turn ${t} — your orders, capsuleer.`);
   } else g={...g,aiThinking:false};
-  return {newState:g, events:[...e1,...e2]};
+  return {newState:g};
 }
 
 function initGame() {
   let s={
     phase:'player-play',turn:1,winner:null,aiThinking:false,
-    selectedCard:null,attackers:[],targeting:null,
-    log:['📻 NEW EDEN PROTOCOL online.','Deploy ships, then ENGAGE or END TURN.'],
+    selectedCard:null,pendingDeploy:null,attackers:[],targeting:null,
+    kills:[{id:uid(),turn:0,text:'⚡ Fleet engagement initiated in New Eden local',color:'#4488cc'}],
     player:{hp:20,core:1,maxCore:1,deck:buildDeck(),hand:[],field:[]},
-    ai:    {hp:20,core:1,maxCore:1,deck:buildDeck(),hand:[],field:[]},
+    ai:   {hp:20,core:1,maxCore:1,deck:buildDeck(),hand:[],field:[]},
   };
   s=drawN(s,'player',5); s=drawN(s,'ai',5);
   return s;
@@ -169,263 +195,221 @@ function initGame() {
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [apiKey,     setApiKey]     = useState('');
-  const [keyInput,   setKeyInput]   = useState('');
-  const [keyError,   setKeyError]   = useState('');
-  const [g,          setG]          = useState(null);
-  const [story,      setStory]      = useState([]);
-  const [narLoading, setNarLoading] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [g,       setG]       = useState(null);
   const [particles,  setParticles]  = useState([]);
   const [screenFx,   setScreenFx]   = useState('');
   const [beams,      setBeams]      = useState([]);
 
-  const storyRef      = useRef(null);
-  const timerRef      = useRef(null);
-  const queueRef      = useRef([]);
-  const processingRef = useRef(false);
-  const keyRef        = useRef('');
-  // ── THE REAL FIX: a ref lock so React StrictMode double-invoke can't cancel the timer ──
-  const aiLockRef     = useRef(false);
+  const timerRef   = useRef(null);
+  const aiLockRef  = useRef(false);
 
-  // ── VISUAL HELPERS ────────────────────────────────────────────────────────
-  const spawnParticles = useCallback((zone, color, count=12) => {
-    const zones={hand:{x:50,y:87},playerField:{x:50,y:63},aiField:{x:50,y:33},center:{x:50,y:50}};
+  // ── VISUAL HELPERS ──────────────────────────────────────────────────────────
+  const spawnParticles = useCallback((zone,color,count=12)=>{
+    const zones={hand:{x:50,y:90},pFront:{x:50,y:65},pBack:{x:50,y:76},aiFront:{x:50,y:33},aiBack:{x:50,y:22},center:{x:50,y:50}};
     const {x,y}=zones[zone]||zones.center;
-    const ps=Array.from({length:count},(_,i)=>({
-      id:uid(), x, y,
-      angle:(i/count)*360+(Math.random()-.5)*22,
-      dist:50+Math.random()*90,
-      color, size:3+Math.random()*4,
-      dur:0.5+Math.random()*0.45,
-    }));
+    const ps=Array.from({length:count},(_,i)=>({id:uid(),x,y,angle:(i/count)*360+(Math.random()-.5)*22,dist:45+Math.random()*85,color,size:3+Math.random()*4,dur:.45+Math.random()*.4}));
     setParticles(prev=>[...prev,...ps]);
-    setTimeout(()=>setParticles(prev=>prev.filter(p=>!ps.find(n=>n.id===p.id))),1000);
+    setTimeout(()=>setParticles(prev=>prev.filter(p=>!ps.find(n=>n.id===p.id))),950);
   },[]);
 
-  const triggerFx = useCallback((fx, duration=520)=>{
-    setScreenFx(fx);
-    setTimeout(()=>setScreenFx(''),duration);
-  },[]);
-
-  const triggerBeam = useCallback((color, fromPlayer=true)=>{
+  const triggerFx   = useCallback((fx,dur=520)=>{setScreenFx(fx);setTimeout(()=>setScreenFx(''),dur);},[]);
+  const triggerBeam = useCallback((color,fromPlayer=true)=>{
     const id=uid();
     setBeams(prev=>[...prev,{id,color,fromPlayer}]);
-    setTimeout(()=>setBeams(prev=>prev.filter(b=>b.id!==id)),700);
+    setTimeout(()=>setBeams(prev=>prev.filter(b=>b.id!==id)),680);
   },[]);
 
-  // ── NARRATIVE QUEUE ───────────────────────────────────────────────────────
-  const processQueue = useCallback(async()=>{
-    if(processingRef.current||!queueRef.current.length) return;
-    processingRef.current=true;
-    const {event,context}=queueRef.current.shift();
-    setNarLoading(true);
-    const text=await fetchNarrative(keyRef.current,event,context);
-    if(text){
-      setStory(prev=>[{text,turn:context.turn},...prev].slice(0,20));
-      setTimeout(()=>storyRef.current?.scrollTo({top:0,behavior:'smooth'}),50);
-    }
-    setNarLoading(false);
-    processingRef.current=false;
-    if(queueRef.current.length) setTimeout(processQueue,400);
-  },[]);
-
-  const enqueueNarrative = useCallback((event,context)=>{
-    queueRef.current.push({event,context});
-    processQueue();
-  },[processQueue]);
-
-  // ── AI TURN EFFECT — FIXED ────────────────────────────────────────────────
-  // Root cause of the stuck bug: aiThinking was in the dep array.
-  // Setting aiThinking:true triggered cleanup which CANCELLED the timer.
-  // Fix: use a ref lock, depend only on phase, never cancel mid-flight.
+  // ── AI TURN EFFECT — properly fixed ────────────────────────────────────────
+  // The real bug: React cleanup was firing between dep-change and re-run, clearing
+  // the timer. Fix: ref lock + reset in cleanup so StrictMode double-invoke works.
   useEffect(()=>{
-    if(!g || g.phase!=='ai-turn') return;
-    if(aiLockRef.current) return; // already processing
-    aiLockRef.current = true;
-
-    const capturedState = g;
-    timerRef.current = setTimeout(()=>{
+    if(!g||g.phase!=='ai-turn') return;
+    if(aiLockRef.current) return;
+    aiLockRef.current=true;
+    const captured=g;
+    timerRef.current=setTimeout(()=>{
       try {
-        const {newState, events} = runAiTurn(capturedState);
-        const prevHp = capturedState.player.hp;
-        const ctx = {
-          turn:capturedState.turn, playerHp:capturedState.player.hp, aiHp:capturedState.ai.hp,
-          playerField:capturedState.player.field.map(u=>u.name).join(', ')||'empty',
-          aiField:capturedState.ai.field.map(u=>u.name).join(', ')||'empty',
-        };
+        const {newState}=runAiTurn(captured);
+        const prevHp=captured.player.hp;
         setG(newState);
-        aiLockRef.current = false;
-
-        if(newState.player.hp < prevHp){
+        aiLockRef.current=false;
+        if(newState.player.hp<prevHp){
           const dmg=prevHp-newState.player.hp;
           triggerBeam(dmg>=3?'#ff3344':'#ff7733',false);
           setTimeout(()=>triggerFx(dmg>=3?'big-chroma':'chroma',dmg>=3?700:480),200);
-          spawnParticles('playerField','#ff3344',dmg>=3?16:10);
+          spawnParticles('pFront','#ff3344',dmg>=3?16:10);
         }
-        if(newState.ai.field.length>capturedState.ai.field.length) spawnParticles('aiField','#0088ff',8);
-
-        for(const ev of events) enqueueNarrative(ev, ctx);
-        if(newState.winner) enqueueNarrative(
-          newState.winner==='ai'
-            ? 'Your pod has been destroyed. CONCORD has logged the loss. Clone activated.'
-            : 'Enemy capsuleer has been podded. Sovereignty secured. GF in local.',
-          {...ctx, playerHp:newState.player.hp, aiHp:newState.ai.hp}
-        );
+        if(newState.ai.field.length>captured.ai.field.length) spawnParticles('aiFront','#0088ff',8);
       } catch(err){
-        console.error('AI turn error:',err);
-        aiLockRef.current = false;
+        console.error('AI error:',err);
+        aiLockRef.current=false;
         setG(s=>({...s,phase:'player-play',aiThinking:false,turn:(s.turn||1)+1,player:{...s.player,core:s.player.maxCore}}));
       }
-    }, 1600);
-
-    // cleanup: only clear timer, do NOT reset aiLockRef (that would re-trigger)
-    return () => clearTimeout(timerRef.current);
-  }, [g?.phase]); // ← only phase in deps, NOT aiThinking
-
-  // Reset lock when phase leaves ai-turn
-  useEffect(()=>{
-    if(g?.phase !== 'ai-turn') aiLockRef.current = false;
+    },1600);
+    // Reset lock in cleanup — critical for StrictMode double-invoke to work correctly
+    return()=>{clearTimeout(timerRef.current);aiLockRef.current=false;};
   },[g?.phase]);
 
-  // ── ENV KEY AUTO-LOAD ─────────────────────────────────────────────────────
-  useEffect(()=>{
-    const envKey=import.meta.env.VITE_OPENAI_KEY;
-    if(envKey&&!g){
-      keyRef.current=envKey; setApiKey(envKey);
-      setG(initGame()); setStory([]);
-      enqueueNarrative('Capsuleer, your connection to the New Eden grid has been established. An enemy fleet has been detected in local.',{turn:1,playerHp:20,aiHp:20,playerField:'empty',aiField:'empty'});
-    }
-  },[]);
-
-  const startGame=()=>{
-    if(!keyInput.trim().startsWith('sk-')){setKeyError('Key should start with sk-');return;}
-    setKeyError('');
-    const key=keyInput.trim(); keyRef.current=key; setApiKey(key);
-    setG(initGame()); setStory([]);
-    enqueueNarrative('Capsuleer, your connection to the New Eden grid has been established. An enemy fleet has been detected in local.',{turn:1,playerHp:20,aiHp:20,playerField:'empty',aiField:'empty'});
-  };
-
-  const resetGame=()=>{
-    setG(null);setStory([]);setApiKey('');setKeyInput('');
-    keyRef.current='';processingRef.current=false;queueRef.current=[];
-    setParticles([]);setScreenFx('');setBeams([]);
-    aiLockRef.current=false;
-  };
-
-  // ── GAME ACTIONS ──────────────────────────────────────────────────────────
-  const selectCard=cUid=>{
-    if(!g||g.phase!=='player-play'||g.targeting) return;
+  // ── GAME ACTIONS ────────────────────────────────────────────────────────────
+  const selectCard = cUid => {
+    if(!g||g.phase!=='player-play'||g.targeting||g.pendingDeploy) return;
     setG(s=>({...s,selectedCard:s.selectedCard===cUid?null:cUid}));
   };
 
-  const playCard=cUid=>{
-    if(!g) return;
+  const handleCardAction = cUid => {
+    if(!g||g.phase!=='player-play') return;
     const card=g.player.hand.find(c=>c.uid===cUid);
     if(!card||card.cost>g.player.core) return;
-    const ctx={turn:g.turn,playerHp:g.player.hp,aiHp:g.ai.hp,
-      playerField:g.player.field.map(u=>u.name).join(',')||'empty',
-      aiField:g.ai.field.map(u=>u.name).join(',')||'empty'};
+
+    if(card.type==='ship') {
+      setG(s=>({...s,selectedCard:null,pendingDeploy:card}));
+      return;
+    }
+
+    // Module play
     setG(s=>{
       if(s.phase!=='player-play') return s;
       const c=s.player.hand.find(x=>x.uid===cUid);
       if(!c||c.cost>s.player.core) return s;
-      let ns={...s,selectedCard:null,player:{...s.player,core:s.player.core-c.cost,hand:s.player.hand.filter(x=>x.uid!==cUid)}};
-      if(c.type==='ship'){
-        const unit={...c,currentHp:c.def,tapped:c.ability!=='haste',justPlayed:c.ability!=='haste'};
-        if(c.ability==='zap'&&ns.ai.field.length){
-          const t=ns.ai.field.reduce((a,b)=>a.currentHp<b.currentHp?a:b);
-          ns={...ns,ai:{...ns.ai,field:ns.ai.field.map(u=>u.uid===t.uid?{...u,currentHp:u.currentHp-1}:u).filter(u=>u.currentHp>0)}};
-          ns=addLog(ns,`🚀 ${c.name} missile hits ${t.name}!`);
-          setTimeout(()=>enqueueNarrative(`Your ${c.name} landed on grid and immediately volleyed missiles into enemy ${t.name}.`,ctx),0);
-        } else {ns=addLog(ns,`🚀 ${c.name} on grid.`);setTimeout(()=>enqueueNarrative(`Your ${c.name} has landed on the engagement grid.`,ctx),0);}
-        ns={...ns,player:{...ns.player,field:[...ns.player.field,unit]}};
+      let ns={...s,selectedCard:null,pendingDeploy:null,
+        player:{...s.player,core:s.player.core-c.cost,hand:s.player.hand.filter(x=>x.uid!==cUid)}};
+      if(['damage3','destroy','heal3'].includes(c.ability)){
+        ns={...ns,targeting:{ability:c.ability,name:c.name}};
       } else {
-        if(['damage3','destroy','buff'].includes(c.ability)){ns={...ns,targeting:{ability:c.ability,name:c.name}};ns=addLog(ns,`🎯 ${c.name} — select a target.`);}
-        else {
-          if(c.ability==='draw2'){ns=drawN(ns,'player',2);ns=addLog(ns,'📡 Data Analyzer — +2 cards.');setTimeout(()=>enqueueNarrative(`Your Data Analyzer cracked the local beacon. Two reserve modules pulled from storage.`,ctx),0);}
-          if(c.ability==='coresurge'){ns={...ns,player:{...ns.player,core:ns.player.core+3}};ns=addLog(ns,'🔋 Cap Booster — +3 cap!');setTimeout(()=>enqueueNarrative(`Capacitor charges injected. Your systems are running at peak efficiency.`,ctx),0);}
-        }
+        if(c.ability==='draw2'){ns=drawN(ns,'player',2);ns=addKill(ns,{turn:s.turn,text:`📡 Data Analyzer — you draw 2 cards`,color:'#4488cc'});}
+        if(c.ability==='coresurge'){ns={...ns,player:{...ns.player,core:ns.player.core+3}};ns=addKill(ns,{turn:s.turn,text:`🔋 Cap Booster — +3 capacitor`,color:'#4488cc'});}
       }
       return checkWinner(ns);
     });
-    spawnParticles('hand', card.color, 14);
-    if(card.type==='module') setTimeout(()=>triggerFx('chroma',450),80);
+    spawnParticles('hand',card.color,12);
+    if(!['draw2','coresurge'].includes(card.ability)) setTimeout(()=>triggerFx('chroma',450),80);
+  };
+
+  const deployToRow = row => {
+    if(!g?.pendingDeploy) return;
+    const card=g.pendingDeploy;
+    if(card.cost>g.player.core) return;
+    setG(s=>{
+      if(!s.pendingDeploy) return s;
+      const c=s.pendingDeploy;
+      if(c.cost>s.player.core) return s;
+      const unit={...c,currentHp:c.def,tapped:c.ability!=='haste',justPlayed:c.ability!=='haste',row};
+      let ns={...s,pendingDeploy:null,selectedCard:null,
+        player:{...s.player,core:s.player.core-c.cost,hand:s.player.hand.filter(x=>x.uid!==c.uid),field:[...s.player.field,unit]}};
+      ns=addKill(ns,{turn:s.turn,text:`🚀 Your ${c.name} on grid · ${row.toUpperCase()}`,color:'#4488cc'});
+      return checkWinner(ns);
+    });
+    spawnParticles(row==='front'?'pFront':'pBack',card.color,14);
     if(card.ability==='haste') triggerBeam(card.color,true);
   };
 
-  const handleTarget=(type,tUid)=>{
+  const handleTarget = (type,tUid) => {
     if(!g?.targeting) return;
     const {ability,name}=g.targeting;
-    const ctx={turn:g.turn,playerHp:g.player.hp,aiHp:g.ai.hp,
-      playerField:g.player.field.map(u=>u.name).join(',')||'empty',
-      aiField:g.ai.field.map(u=>u.name).join(',')||'empty'};
     setG(s=>{
       if(!s.targeting) return s;
       const {ability:ab,name:nm}=s.targeting;
       let ns={...s,targeting:null};
       if(ab==='damage3'){
-        if(type==='ai-unit'){const t=ns.ai.field.find(u=>u.uid===tUid);if(!t)return s;const hp=t.currentHp-3;ns={...ns,ai:{...ns.ai,field:ns.ai.field.map(u=>u.uid===tUid?{...u,currentHp:hp}:u).filter(u=>u.currentHp>0)}};ns=addLog(ns,`⚡ ${nm} → ${t.name} -3${hp<=0?' (destroyed)':''}!`);setTimeout(()=>enqueueNarrative(`Your Warp Disruptor locked enemy ${t.name} and applied 3 damage${hp<=0?'. Ship destroyed, wreck on field':''}.`,ctx),0);}
-        else if(type==='ai-player'){ns={...ns,ai:{...ns.ai,hp:ns.ai.hp-3}};ns=addLog(ns,'⚡ Disruptor → enemy pod -3!');setTimeout(()=>enqueueNarrative(`Your Warp Disruptor bypassed the enemy fleet and hit their pod directly for 3 hull damage.`,ctx),0);}
-      } else if(ab==='destroy'&&type==='ai-unit'){const t=ns.ai.field.find(u=>u.uid===tUid);if(!t)return s;ns={...ns,ai:{...ns.ai,field:ns.ai.field.filter(u=>u.uid!==tUid)}};ns=addLog(ns,`💥 Smartbomb → ${t.name} gone!`);setTimeout(()=>enqueueNarrative(`Smartbomb detonated in range of enemy ${t.name}. Hull integrity reached zero. Pod is away.`,ctx),0);}
-      else if(ab==='buff'&&type==='player-unit'){const t=ns.player.field.find(u=>u.uid===tUid);if(!t)return s;ns={...ns,player:{...ns.player,field:ns.player.field.map(u=>u.uid===tUid?{...u,atk:u.atk+2,currentHp:u.currentHp+2}:u)}};ns=addLog(ns,`🧬 Drone Link → ${t.name} +2/+2!`);setTimeout(()=>enqueueNarrative(`Drone Link Amplifier brought your ${t.name} to full combat spec. Weapons hot.`,ctx),0);}
+        if(type==='ai-ship'){
+          const t=ns.ai.field.find(u=>u.uid===tUid);if(!t)return s;
+          const hp=t.currentHp-3;
+          ns={...ns,ai:{...ns.ai,field:ns.ai.field.map(u=>u.uid===tUid?{...u,currentHp:hp}:u).filter(u=>u.currentHp>0)}};
+          ns=addKill(ns,{turn:s.turn,text:hp<=0?`⚡ ${nm} obliterated enemy ${t.name}`:`⚡ ${nm} hit enemy ${t.name} · 3 dmg`,color:'#44ff88'});
+        } else if(type==='ai-pod'){
+          ns={...ns,ai:{...ns.ai,hp:ns.ai.hp-3}};
+          ns=addKill(ns,{turn:s.turn,text:`⚡ ${nm} hit enemy pod · 3 dmg`,color:'#44ff88'});
+        }
+      } else if(ab==='destroy'&&type==='ai-ship'){
+        const t=ns.ai.field.find(u=>u.uid===tUid);if(!t)return s;
+        ns={...ns,ai:{...ns.ai,field:ns.ai.field.filter(u=>u.uid!==tUid)}};
+        ns=addKill(ns,{turn:s.turn,text:`💥 ${nm} obliterated enemy ${t.name}`,color:'#44ff88'});
+      } else if(ab==='heal3'&&type==='player-ship'){
+        const t=ns.player.field.find(u=>u.uid===tUid);if(!t)return s;
+        ns={...ns,player:{...ns.player,field:ns.player.field.map(u=>u.uid===tUid?{...u,currentHp:Math.min(u.def,u.currentHp+3)}:u)}};
+        ns=addKill(ns,{turn:s.turn,text:`🔧 ${nm} repped your ${t.name} · +3 HP`,color:'#4488cc'});
+      }
       return checkWinner(ns);
     });
-    if(ability==='damage3'){triggerBeam('#ff3355',true);setTimeout(()=>triggerFx('chroma',480),150);spawnParticles('aiField','#ff3355',12);}
-    if(ability==='destroy'){spawnParticles('aiField','#ffaa00',18);setTimeout(()=>triggerFx('big-chroma',600),100);}
-    if(ability==='buff') spawnParticles('playerField','#88ff44',10);
+    if(ability==='damage3'){triggerBeam('#ff3355',true);setTimeout(()=>triggerFx('chroma',480),150);spawnParticles('aiFront','#ff3355',12);}
+    if(ability==='destroy'){spawnParticles('aiFront','#ffaa00',18);setTimeout(()=>triggerFx('big-chroma',600),100);}
+    if(ability==='heal3') spawnParticles('pFront','#88ff44',10);
   };
 
-  const toggleAttacker=uid=>{
+  const toggleAttacker = cUid => {
     if(!g||g.phase!=='player-attack') return;
-    setG(s=>{const u=s.player.field.find(x=>x.uid===uid);if(!u||u.tapped)return s;const has=s.attackers.includes(uid);return{...s,attackers:has?s.attackers.filter(x=>x!==uid):[...s.attackers,uid]};});
+    const u=g.player.field.find(x=>x.uid===cUid);
+    if(!u||u.tapped) return;
+    if(u.row==='back'&&u.ability!=='ranged') return;
+    setG(s=>{const has=s.attackers.includes(cUid);return{...s,attackers:has?s.attackers.filter(x=>x!==cUid):[...s.attackers,cUid]};});
   };
 
-  const resolveAttack=()=>{
+  const resolveAttack = () => {
     if(!g) return;
     const primaryColor=g.player.field.find(u=>g.attackers.includes(u.uid))?.color||'#00ccff';
     setG(s=>{
       if(!s.attackers.length) return {...s,phase:'ai-turn',attackers:[]};
-      let aiField=[...s.ai.field],pField=s.player.field.map(u=>s.attackers.includes(u.uid)?{...u,tapped:true}:u),aiHp=s.ai.hp;
-      const logs=[],events=[],used=new Set();
-      for(const atkUid of s.attackers){
-        const atk=s.player.field.find(u=>u.uid===atkUid);if(!atk)continue;
-        const ctx={turn:s.turn,playerHp:s.player.hp,aiHp,playerField:s.player.field.map(u=>u.name).join(',')||'empty',aiField:aiField.map(u=>u.name).join(',')||'empty'};
-        if(atk.ability==='unblockable'){aiHp-=atk.atk;logs.push(`👻 ${atk.name} nullifier active — ${atk.atk} dmg`);events.push({ev:`Your ${atk.name} burned through with Interdiction Nullifier active, applying ${atk.atk} damage directly to the enemy capsuleer.`,ctx});continue;}
-        const blocker=aiField.find(u=>!used.has(u.uid));
+      const atkers=s.attackers.map(id=>s.player.field.find(u=>u.uid===id)).filter(Boolean);
+      let pField=s.player.field.map(u=>s.attackers.includes(u.uid)?{...u,tapped:true}:u);
+      let aiField=[...s.ai.field], aiHp=s.ai.hp;
+      const kills=[], used=new Set();
+
+      for(const atk of atkers){
+        if(atk.ability==='unblockable'){
+          aiHp-=atk.atk;
+          kills.push({text:`👻 Your ${atk.name} NULLIFIER → enemy pod · ${atk.atk} dmg`,color:'#44ff88'});
+          continue;
+        }
+        const aiFront=aiField.filter(u=>u.row==='front'&&!used.has(u.uid));
+        const aiBack=aiField.filter(u=>u.row==='back'&&!used.has(u.uid));
+        const blocker=aiFront[0]||aiBack[0];
         if(blocker){
-          used.add(blocker.uid);const ah=atk.currentHp-blocker.atk,bh=blocker.currentHp-atk.atk;
-          if(ah<=0){pField=pField.filter(u=>u.uid!==atkUid);logs.push(`⚔ ${atk.name} lost — both destroyed`);events.push({ev:`Your ${atk.name} traded with enemy ${blocker.name}. Both ships are wrecks on the field.`,ctx});}
-          else{pField=pField.map(u=>u.uid===atkUid?{...u,currentHp:ah,tapped:true}:u);if(bh<=0)events.push({ev:`Your ${atk.name} broke through enemy ${blocker.name}'s tank and destroyed it.`,ctx});}
-          if(bh<=0){if(atk.ability==='crush'&&bh<0){aiHp+=bh;logs.push(`💥 Doomsday overflow ${Math.abs(bh)}`);events.push({ev:`Revelation's Doomsday Device obliterated enemy ${blocker.name} and ${Math.abs(bh)} excess damage bled through to the pod.`,ctx});}
-          else logs.push(`✅ ${blocker.name} destroyed`);aiField=aiField.filter(u=>u.uid!==blocker.uid);}
-          else aiField=aiField.map(u=>u.uid===blocker.uid?{...u,currentHp:bh}:u);
-        } else {aiHp-=atk.atk;logs.push(`💥 ${atk.name} → ${atk.atk} hull dmg`);events.push({ev:`Your ${atk.name} encountered no resistance and applied ${atk.atk} direct damage to the enemy capsuleer.`,ctx});}
+          used.add(blocker.uid);
+          const ah=atk.currentHp-blocker.atk, bh=blocker.currentHp-atk.atk;
+          if(ah<=0){pField=pField.filter(u=>u.uid!==atk.uid);kills.push({text:`☠ Enemy ${blocker.name} destroyed your ${atk.name}`,color:'#ff4444'});}
+          if(bh<=0){
+            if(atk.ability==='crush'&&bh<0){aiHp+=bh;kills.push({text:`⚔ Your ${atk.name} DOOMSDAY · ${blocker.name} + ${Math.abs(bh)} overflow`,color:'#44ff88'});}
+            else kills.push({text:`✅ Your ${atk.name} destroyed enemy ${blocker.name}`,color:'#44ff88'});
+            aiField=aiField.filter(u=>u.uid!==blocker.uid);
+          } else aiField=aiField.map(u=>u.uid===blocker.uid?{...u,currentHp:bh}:u);
+        } else {
+          aiHp-=atk.atk;
+          kills.push({text:`💥 Your ${atk.name} → enemy pod · ${atk.atk} dmg`,color:'#44ff88'});
+        }
       }
       let ns={...s,player:{...s.player,field:pField},ai:{...s.ai,field:aiField,hp:aiHp},attackers:[],phase:'ai-turn'};
-      for(const l of logs) ns=addLog(ns,l);
-      ns=checkWinner(ns);
-      for(const {ev,ctx} of events) setTimeout(()=>enqueueNarrative(ev,ctx),0);
-      if(ns.winner) setTimeout(()=>enqueueNarrative(ns.winner==='player'?'Enemy pod destroyed. GF in local. Sovereignty secured.':'Your pod has been destroyed. CONCORD clone contract activated.',{turn:s.turn,playerHp:ns.player.hp,aiHp:ns.ai.hp}),0);
-      return ns;
+      for(const k of kills) ns=addKill(ns,{...k,turn:s.turn});
+      return checkWinner(ns);
     });
     triggerBeam(primaryColor,true);
-    spawnParticles('aiField',primaryColor,14);
+    spawnParticles('aiFront',primaryColor,14);
     setTimeout(()=>triggerFx('chroma',400),180);
   };
 
-  const goAttack =()=>setG(s=>({...s,phase:'player-attack',selectedCard:null,targeting:null}));
-  const endTurn  =()=>setG(s=>({...s,phase:'ai-turn',attackers:[],selectedCard:null,targeting:null}));
-  const cancelTgt=()=>setG(s=>({...s,targeting:null}));
+  const goAttack    = () => setG(s=>({...s,phase:'player-attack',selectedCard:null,targeting:null,pendingDeploy:null}));
+  const endTurn     = () => setG(s=>({...s,phase:'ai-turn',attackers:[],selectedCard:null,targeting:null,pendingDeploy:null}));
+  const cancelTarget = () => setG(s=>({...s,targeting:null}));
+  const cancelDeploy = () => setG(s=>({...s,pendingDeploy:null,selectedCard:null}));
+  const resetGame   = () => { setStarted(false); setG(null); setParticles([]); setScreenFx(''); setBeams([]); };
 
-  if(!g) return <InitScreen keyInput={keyInput} setKeyInput={setKeyInput} keyError={keyError} onStart={startGame}/>;
+  if(!started) return <IntroScreen onStart={()=>{setG(initGame());setStarted(true);}}/>;
+  if(!g) return null;
 
   const phaseLabel={'player-play':'DEPLOY PHASE','player-attack':'ENGAGE PHASE','ai-turn':'ENEMY FLEET ACTIVE','game-over':'ENGAGEMENT OVER'}[g.phase]||g.phase;
   const isTargeting=!!g.targeting;
+  const isPendingDeploy=!!g.pendingDeploy;
+
   const fxFilter=screenFx==='big-chroma'
-    ?'drop-shadow(5px 0 0 rgba(255,50,50,.7)) drop-shadow(-5px 0 0 rgba(0,150,255,.7))'
+    ?'drop-shadow(5px 0 0 rgba(255,50,50,.7)) drop-shadow(-5px 0 0 rgba(0,140,255,.7))'
     :screenFx==='chroma'
-    ?'drop-shadow(2px 0 0 rgba(255,50,50,.5)) drop-shadow(-2px 0 0 rgba(0,150,255,.5))'
+    ?'drop-shadow(2px 0 0 rgba(255,50,50,.5)) drop-shadow(-2px 0 0 rgba(0,140,255,.5))'
     :'none';
+
+  // Which enemy ships can be targeted
+  const aiShipTargetable = u => isTargeting && ['damage3','destroy'].includes(g.targeting.ability);
+  const playerShipTargetable = u => isTargeting && g.targeting.ability==='heal3';
+  const canAttack = u => g.phase==='player-attack'&&!u.tapped&&(u.row==='front'||(u.row==='back'&&u.ability==='ranged'));
 
   return (
     <div style={{minHeight:'100vh',background:'#01030a',color:'#c8d8e8',fontFamily:"'Exo 2',sans-serif",
@@ -436,59 +420,58 @@ export default function App() {
         *{box-sizing:border-box;margin:0;padding:0}
         ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:#0a1830}
         @keyframes twinkle{0%,100%{opacity:.08}50%{opacity:.5}}
-        @keyframes nebulaDrift{0%{transform:translate(0,0) scale(1)}33%{transform:translate(12px,-9px) scale(1.05)}66%{transform:translate(-10px,13px) scale(.96)}100%{transform:translate(0,0) scale(1)}}
+        @keyframes nebulaDrift{0%{transform:translate(0,0) scale(1)}33%{transform:translate(13px,-9px) scale(1.05)}66%{transform:translate(-10px,13px) scale(.96)}100%{transform:translate(0,0) scale(1)}}
         @keyframes scanline{0%{top:-2px}100%{top:101%}}
         @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
-        @keyframes flicker{0%,100%{opacity:1}91.5%{opacity:1}92%{opacity:.2}92.5%{opacity:1}97%{opacity:.6}97.5%{opacity:1}}
-        @keyframes unitDeploy{0%{opacity:0;transform:translateY(28px) scale(.75)}65%{transform:translateY(-6px) scale(1.09)}100%{opacity:1;transform:translateY(0) scale(1)}}
-        @keyframes unitGlow{0%,100%{box-shadow:0 0 5px var(--gc),0 0 12px var(--gc)22}50%{box-shadow:0 0 14px var(--gc),0 0 30px var(--gc)44,0 0 55px var(--gc)15}}
+        @keyframes flicker{0%,100%{opacity:1}91.5%{opacity:1}92%{opacity:.15}92.5%{opacity:1}97%{opacity:.55}97.5%{opacity:1}}
+        @keyframes unitDeploy{0%{opacity:0;transform:translateY(26px) scale(.76)}65%{transform:translateY(-6px) scale(1.1)}100%{opacity:1;transform:translateY(0) scale(1)}}
+        @keyframes unitGlow{0%,100%{box-shadow:0 0 5px var(--gc),0 0 12px var(--gc)22}50%{box-shadow:0 0 14px var(--gc),0 0 30px var(--gc)44}}
         @keyframes particleOut{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(var(--tx),var(--ty)) scale(.2)}}
         @keyframes beamSlide{0%{transform:scaleX(0);opacity:1}55%{transform:scaleX(1);opacity:.9}100%{transform:scaleX(1);opacity:0}}
-        @keyframes storySlide{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
-        @keyframes warping{0%,100%{clip-path:inset(0)}33%{clip-path:inset(2px 0 2px 0)}66%{clip-path:inset(0 2px 0 2px)}}
+        @keyframes killSlide{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes targetPulse{0%,100%{border-color:var(--tc)44}50%{border-color:var(--tc)cc}}
         .card-lift{transition:transform .15s ease,box-shadow .15s ease;cursor:pointer}
-        .card-lift:hover{transform:translateY(-10px) scale(1.07);z-index:20}
-        .btn-eve{transition:all .18s ease;clip-path:polygon(8px 0%,100% 0%,100% calc(100% - 8px),calc(100% - 8px) 100%,0% 100%,0% 8px)}
+        .card-lift:hover{transform:translateY(-9px) scale(1.07);z-index:20}
+        .btn-eve{transition:all .18s ease}
         .btn-eve:hover:not(:disabled){filter:brightness(1.5)}
-        .unit-deploy{animation:unitDeploy .44s cubic-bezier(.2,1.4,.6,1) forwards}
+        .unit-deploy{animation:unitDeploy .42s cubic-bezier(.2,1.35,.6,1) forwards}
         .unit-glow{animation:unitGlow 2.8s ease-in-out infinite}
-        .story-entry{animation:storySlide .4s ease}
+        .kill-entry{animation:killSlide .35s ease}
+        .target-pulse{animation:targetPulse 1s ease-in-out infinite}
         .narrating{animation:pulse 1.3s infinite}
-        .warp-text{animation:warping 3s infinite}
       `}</style>
 
-      {/* NEBULA + STARS */}
+      {/* BACKGROUND */}
       <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:0,overflow:'hidden'}}>
         {NEBULAE.map((n,i)=>(
           <div key={i} style={{position:'absolute',left:n.x,top:n.y,width:n.w,height:n.h,
-            background:n.color,borderRadius:'50%',filter:`blur(${i%2===0?'60px':'80px'})`,opacity:n.op,
+            background:n.color,borderRadius:'50%',filter:`blur(${i%2===0?'58px':'78px'})`,opacity:n.op,
             animation:`nebulaDrift ${n.dur} ${n.delay} ease-in-out infinite`}}/>
         ))}
         {STARS.map((s,i)=>(
-          <div key={i} style={{position:'absolute',left:s.left,top:s.top,
-            width:`${s.w}px`,height:`${s.w}px`,borderRadius:'50%',
-            background:i%8===0?'#aaccff':i%5===0?'#ffddaa':'#ffffff',
+          <div key={i} style={{position:'absolute',left:s.left,top:s.top,width:`${s.w}px`,height:`${s.w}px`,
+            borderRadius:'50%',background:i%7===0?'#aaccff':i%4===0?'#ffddaa':'#ffffff',
             animation:`twinkle ${s.dur}s ${s.delay}s infinite`}}/>
         ))}
-        <div style={{position:'absolute',inset:0,backgroundImage:'linear-gradient(rgba(0,80,160,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(0,80,160,.02) 1px,transparent 1px)',backgroundSize:'48px 48px'}}/>
-        <div style={{position:'absolute',inset:0,background:'radial-gradient(ellipse at center,transparent 30%,rgba(1,3,10,.85) 100%)'}}/>
+        <div style={{position:'absolute',inset:0,backgroundImage:'linear-gradient(rgba(0,60,140,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(0,60,140,.018) 1px,transparent 1px)',backgroundSize:'48px 48px'}}/>
+        <div style={{position:'absolute',inset:0,background:'radial-gradient(ellipse at center,transparent 28%,rgba(1,3,10,.88) 100%)'}}/>
       </div>
-
-      {/* SCANLINE */}
-      <div style={{position:'fixed',left:0,right:0,height:'1px',background:'linear-gradient(90deg,transparent,rgba(0,120,255,.08),transparent)',animation:'scanline 12s linear infinite',zIndex:1,pointerEvents:'none'}}/>
+      <div style={{position:'fixed',left:0,right:0,height:'1px',background:'linear-gradient(90deg,transparent,rgba(0,100,220,.08),transparent)',animation:'scanline 12s linear infinite',zIndex:1,pointerEvents:'none'}}/>
 
       {/* PARTICLES */}
       <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:50,overflow:'hidden'}}>
-        {particles.map(p=>{
-          const rad=p.angle*Math.PI/180;
-          return <div key={p.id} style={{position:'absolute',left:`calc(${p.x}% - ${p.size/2}px)`,top:`calc(${p.y}% - ${p.size/2}px)`,width:`${p.size}px`,height:`${p.size}px`,borderRadius:'50%',background:p.color,boxShadow:`0 0 ${p.size*2.5}px ${p.color}`,'--tx':`${Math.cos(rad)*p.dist}px`,'--ty':`${Math.sin(rad)*p.dist}px`,animation:`particleOut ${p.dur}s ease-out forwards`}}/>;
-        })}
+        {particles.map(p=>{const rad=p.angle*Math.PI/180;return(
+          <div key={p.id} style={{position:'absolute',left:`calc(${p.x}% - ${p.size/2}px)`,top:`calc(${p.y}% - ${p.size/2}px)`,
+            width:`${p.size}px`,height:`${p.size}px`,borderRadius:'50%',background:p.color,
+            boxShadow:`0 0 ${p.size*2.5}px ${p.color}`,'--tx':`${Math.cos(rad)*p.dist}px`,'--ty':`${Math.sin(rad)*p.dist}px`,
+            animation:`particleOut ${p.dur}s ease-out forwards`}}/>
+        );})}
       </div>
 
-      {/* ATTACK BEAMS */}
+      {/* BEAMS */}
       <div style={{position:'fixed',inset:0,pointerEvents:'none',zIndex:40,overflow:'hidden'}}>
         {beams.map(b=>(
-          <div key={b.id} style={{position:'absolute',left:0,right:0,top:b.fromPlayer?'63%':'37%',height:'2px',
+          <div key={b.id} style={{position:'absolute',left:0,right:0,top:b.fromPlayer?'65%':'32%',height:'2px',
             background:`linear-gradient(${b.fromPlayer?'90deg':'270deg'},transparent,${b.color},${b.color}dd,transparent)`,
             boxShadow:`0 0 10px ${b.color},0 0 25px ${b.color}77`,
             transformOrigin:b.fromPlayer?'left center':'right center',
@@ -497,90 +480,167 @@ export default function App() {
       </div>
 
       {/* MAIN LAYOUT */}
-      <div style={{position:'relative',zIndex:2,display:'flex',gap:'8px',padding:'8px',maxWidth:'1100px',margin:'0 auto',width:'100%',height:'100vh',overflow:'hidden'}}>
+      <div style={{position:'relative',zIndex:2,display:'flex',gap:'10px',padding:'8px',maxWidth:'1120px',margin:'0 auto',width:'100%',height:'100vh',overflow:'hidden'}}>
 
-        {/* GAME BOARD */}
-        <div style={{flex:'0 0 490px',display:'flex',flexDirection:'column',gap:'5px',minWidth:0}}>
+        {/* LEFT: TACTICAL BOARD */}
+        <div style={{flex:'0 0 530px',display:'flex',flexDirection:'column',gap:'4px',minWidth:0,overflow:'hidden'}}>
+
           {/* Header */}
-          <div style={{padding:'2px 0 4px',fontFamily:'Orbitron'}}>
-            <div style={{fontSize:'7px',letterSpacing:'5px',color:'#0044aa88',marginBottom:'1px',textAlign:'center'}}>TURN {g.turn} · {phaseLabel}</div>
-            <div style={{textAlign:'center',fontSize:'16px',fontWeight:900,letterSpacing:'5px',
-              background:'linear-gradient(135deg,#00aaff,#0066dd,#4488ff)',
+          <div style={{textAlign:'center',paddingBottom:'3px',fontFamily:'Orbitron'}}>
+            <div style={{fontSize:'7px',letterSpacing:'5px',color:'#003399',marginBottom:'1px'}}>TURN {g.turn} · {phaseLabel}</div>
+            <div style={{fontSize:'15px',fontWeight:900,letterSpacing:'5px',
+              background:'linear-gradient(135deg,#0088dd,#0044aa,#4488ff)',
               WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',
-              animation:'flicker 9s infinite'}} className="warp-text">NEW EDEN PROTOCOL</div>
+              animation:'flicker 9s infinite'}}>NEW EDEN PROTOCOL</div>
           </div>
 
+          {/* Enemy status */}
           <StatusBar label="HOSTILE CAPSULEER" hp={g.ai.hp} handCount={g.ai.hand.length} isPlayer={false}
-            isTargetable={isTargeting&&g.targeting.ability==='damage3'} onTarget={()=>handleTarget('ai-player',null)}/>
-          <BattleField units={g.ai.field} isPlayer={false} attacking={[]} targeting={g.targeting}
-            onUnitClick={id=>{if(isTargeting&&['damage3','destroy'].includes(g.targeting.ability)) handleTarget('ai-unit',id);}}/>
-          <ControlZone log={g.log} phase={g.phase} attackerCount={g.attackers.length}
-            aiThinking={g.phase==='ai-turn'} isTargeting={isTargeting} targetName={g.targeting?.name}
-            onAttack={goAttack} onResolve={resolveAttack} onEnd={endTurn} onCancel={cancelTgt}/>
-          <BattleField units={g.player.field} isPlayer={true} attacking={g.attackers} targeting={g.targeting}
-            onUnitClick={id=>{if(isTargeting&&g.targeting.ability==='buff') handleTarget('player-unit',id); else toggleAttacker(id);}}/>
-          <StatusBar label="YOUR CAPSULEER" hp={g.player.hp} core={g.player.core} maxCore={g.player.maxCore} isPlayer={true}/>
-          <Hand cards={g.player.hand} selected={g.selectedCard} core={g.player.core} phase={g.phase}
-            onSelect={selectCard} onPlay={playCard}/>
+            isTargetable={isTargeting&&g.targeting.ability==='damage3'}
+            onTarget={()=>handleTarget('ai-pod',null)}/>
+
+          {/* Enemy BACK row */}
+          <TacticalRow
+            label="LONG RANGE" ships={backOf(g.ai.field)} isPlayerRow={false}
+            attackers={[]} targeting={g.targeting}
+            canTargetShip={u=>aiShipTargetable(u)}
+            onShipClick={u=>handleTarget('ai-ship',u.uid)}/>
+
+          {/* Enemy FRONT row */}
+          <TacticalRow
+            label="FRONT LINE" ships={frontOf(g.ai.field)} isPlayerRow={false} isFront
+            attackers={[]} targeting={g.targeting}
+            canTargetShip={u=>aiShipTargetable(u)}
+            onShipClick={u=>handleTarget('ai-ship',u.uid)}/>
+
+          {/* Control zone */}
+          <ControlZone
+            phase={g.phase} attackerCount={g.attackers.length}
+            aiThinking={g.phase==='ai-turn'}
+            isTargeting={isTargeting} targetName={g.targeting?.name}
+            isPendingDeploy={isPendingDeploy} pendingName={g.pendingDeploy?.name}
+            onAttack={goAttack} onResolve={resolveAttack} onEnd={endTurn}
+            onCancelTarget={cancelTarget} onCancelDeploy={cancelDeploy}
+            onDeployFront={()=>deployToRow('front')} onDeployBack={()=>deployToRow('back')}/>
+
+          {/* Player FRONT row */}
+          <TacticalRow
+            label="FRONT LINE" ships={frontOf(g.player.field)} isPlayerRow isFront
+            attackers={g.attackers} targeting={g.targeting}
+            canTargetShip={u=>playerShipTargetable(u)}
+            canSelectAttacker={u=>canAttack(u)}
+            onShipClick={u=>{
+              if(playerShipTargetable(u)) handleTarget('player-ship',u.uid);
+              else toggleAttacker(u.uid);
+            }}/>
+
+          {/* Player BACK row */}
+          <TacticalRow
+            label="LONG RANGE" ships={backOf(g.player.field)} isPlayerRow
+            attackers={g.attackers} targeting={g.targeting}
+            canTargetShip={u=>playerShipTargetable(u)}
+            canSelectAttacker={u=>canAttack(u)}
+            onShipClick={u=>{
+              if(playerShipTargetable(u)) handleTarget('player-ship',u.uid);
+              else toggleAttacker(u.uid);
+            }}/>
+
+          {/* Player status */}
+          <StatusBar label="YOUR CAPSULEER" hp={g.player.hp} core={g.player.core} maxCore={g.player.maxCore} isPlayer/>
+
+          {/* Hand */}
+          <Hand cards={g.player.hand} selected={g.selectedCard} pendingDeploy={g.pendingDeploy}
+            core={g.player.core} phase={g.phase}
+            onSelect={selectCard} onAction={handleCardAction}/>
         </div>
 
-        {/* SCOPE FEED */}
+        {/* RIGHT: KILL FEED */}
         <div style={{flex:1,display:'flex',flexDirection:'column',minWidth:0,overflow:'hidden'}}>
-          <div style={{fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'4px',color:'#003388',padding:'3px 0 8px',borderBottom:'1px solid #081428'}}>
-            ◈ SCOPE NEWS NETWORK — FIELD DISPATCH
+          <div style={{fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'4px',color:'#002255',padding:'4px 0 8px',borderBottom:'1px solid #07121f'}}>
+            ◈ SCOPE KILL FEED — LIVE
           </div>
-          {narLoading&&(
-            <div className="narrating" style={{display:'flex',alignItems:'center',gap:'6px',padding:'6px 0',color:'#0066aa66',fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'2px'}}>
-              <div style={{display:'flex',gap:'3px'}}>{[0,1,2].map(i=><div key={i} style={{width:'3px',height:'3px',borderRadius:'50%',background:'#0088cc',animation:`pulse 1s ${i*.2}s infinite`}}/>)}</div>
-              INCOMING TRANSMISSION
-            </div>
-          )}
-          <div ref={storyRef} style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:'14px',padding:'10px 0'}}>
-            {story.length===0&&!narLoading&&<div style={{color:'#081828',fontFamily:'Share Tech Mono',fontSize:'11px',lineHeight:1.7,marginTop:'20px'}}>standing by for combat data...</div>}
-            {story.map((entry,i)=>(
-              <div key={i} className="story-entry" style={{borderLeft:`2px solid ${i===0?'#003388':'#0a1828'}`,paddingLeft:'12px'}}>
-                <div style={{fontFamily:'Orbitron',fontSize:'6px',color:'#0a2040',letterSpacing:'2px',marginBottom:'3px'}}>TURN {entry.turn} · DISPATCH #{story.length-i} · NEW EDEN</div>
-                <div style={{fontFamily:'Share Tech Mono',fontSize:'12px',lineHeight:1.85,color:i===0?'#7799bb':i===1?'#3d5570':'#253545',transition:'color .5s'}}>{entry.text}</div>
+
+          {/* Legend */}
+          <div style={{display:'flex',gap:'10px',padding:'5px 0',borderBottom:'1px solid #060e1a',marginBottom:'4px'}}>
+            {[['#44ff88','YOUR KILLS'],['#ff4444','YOUR LOSSES'],['#4488cc','EVENTS']].map(([c,l])=>(
+              <div key={l} style={{display:'flex',alignItems:'center',gap:'3px'}}>
+                <div style={{width:'6px',height:'6px',borderRadius:'50%',background:c,boxShadow:`0 0 4px ${c}`}}/>
+                <span style={{fontFamily:'Orbitron',fontSize:'5.5px',letterSpacing:'1px',color:'#1a2a38'}}>{l}</span>
               </div>
             ))}
           </div>
-          <button onClick={resetGame} className="btn-eve" style={{background:'transparent',border:'1px solid #081428',color:'#0d1e30',padding:'6px',fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'2px',cursor:'pointer',marginTop:'6px'}}>
+
+          {/* Positioning guide */}
+          <div style={{background:'rgba(0,0,0,.3)',border:'1px solid #07121f',padding:'6px 8px',marginBottom:'6px',borderRadius:'2px'}}>
+            <div style={{fontFamily:'Orbitron',fontSize:'6px',letterSpacing:'2px',color:'#1a3050',marginBottom:'4px'}}>TACTICAL GUIDE</div>
+            {[
+              ['FRONT LINE','Blocks incoming attacks. All ships can attack from here.'],
+              ['LONG RANGE','Protected row. Only RANGED ships (Drake) can attack from here.'],
+              ['NULLIFIER','Stiletto bypasses all blocking — hits pod directly.'],
+              ['DOOMSDAY','Revelation bleeds excess damage through to pod.'],
+            ].map(([k,v])=>(
+              <div key={k} style={{display:'flex',gap:'6px',marginBottom:'2px'}}>
+                <span style={{fontFamily:'Orbitron',fontSize:'6px',color:'#1e3a52',minWidth:'70px',flexShrink:0}}>{k}</span>
+                <span style={{fontFamily:'Share Tech Mono',fontSize:'9px',color:'#1a2a38',lineHeight:1.4}}>{v}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Kill feed entries */}
+          <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:'3px',paddingRight:'2px'}}>
+            {g.kills.map((k,i)=>(
+              <div key={k.id} className="kill-entry" style={{
+                display:'flex',gap:'6px',padding:'4px 6px',
+                background:i===0?'rgba(0,0,0,.35)':'transparent',
+                borderLeft:`2px solid ${i===0?k.color:k.color+'33'}`,
+                transition:'all .3s',
+              }}>
+                <span style={{fontFamily:'Orbitron',fontSize:'6px',color:'#0a1828',minWidth:'20px',flexShrink:0,paddingTop:'1px'}}>T{k.turn}</span>
+                <span style={{fontFamily:'Share Tech Mono',fontSize:'10px',color:i===0?k.color:i<4?k.color+'aa':'#1a2838',lineHeight:1.4,transition:'color .4s'}}>{k.text}</span>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={resetGame} className="btn-eve" style={{background:'transparent',border:'1px solid #06101a',color:'#0d1e2e',padding:'6px',fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'2px',cursor:'pointer',marginTop:'6px'}}>
             ⏻ DISCONNECT FROM LOCAL
           </button>
         </div>
       </div>
 
-      {g.winner&&<WinnerOverlay winner={g.winner} lastStory={story[0]?.text} onReset={resetGame}/>}
+      {g.winner&&<WinnerOverlay winner={g.winner} onReset={resetGame}/>}
     </div>
   );
 }
 
-// ── INIT SCREEN ───────────────────────────────────────────────────────────────
-function InitScreen({keyInput,setKeyInput,keyError,onStart}) {
+// ── INTRO SCREEN ──────────────────────────────────────────────────────────────
+function IntroScreen({onStart}) {
   return (
     <div style={{minHeight:'100vh',background:'#010208',display:'flex',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden'}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;900&family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');*{box-sizing:border-box;margin:0;padding:0}@keyframes nd{0%{transform:translate(0,0)}50%{transform:translate(14px,-10px)}100%{transform:translate(0,0)}}@keyframes flicker{0%,100%{opacity:1}92%{opacity:1}93%{opacity:.25}94%{opacity:1}}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;900&family=Share+Tech+Mono&family=Orbitron:wght@700;900&display=swap');*{box-sizing:border-box;margin:0;padding:0}@keyframes nd{0%{transform:translate(0,0)}50%{transform:translate(14px,-10px)}100%{transform:translate(0,0)}}@keyframes flicker{0%,100%{opacity:1}92%{opacity:1}93%{opacity:.2}94%{opacity:1}}`}</style>
       {[{x:'8%',y:'15%',c:'#001155'},{x:'65%',y:'50%',c:'#002244'},{x:'55%',y:'5%',c:'#110033'}].map((n,i)=>(
-        <div key={i} style={{position:'absolute',left:n.x,top:n.y,width:'350px',height:'250px',background:n.c,borderRadius:'50%',filter:'blur(70px)',opacity:.06,animation:`nd ${18+i*5}s ease-in-out infinite`}}/>
+        <div key={i} style={{position:'absolute',left:n.x,top:n.y,width:'360px',height:'260px',background:n.c,borderRadius:'50%',filter:'blur(72px)',opacity:.06,animation:`nd ${18+i*5}s ease-in-out infinite`}}/>
       ))}
-      <div style={{textAlign:'center',padding:'40px',maxWidth:'440px',width:'100%',position:'relative',zIndex:2}}>
-        <div style={{fontSize:'8px',letterSpacing:'7px',color:'#00224488',fontFamily:'Orbitron',marginBottom:'6px'}}>CAPSULEER AUTHENTICATION</div>
+      <div style={{textAlign:'center',padding:'48px',maxWidth:'480px',width:'100%',position:'relative',zIndex:2}}>
+        <div style={{fontSize:'8px',letterSpacing:'7px',color:'#002244',fontFamily:'Orbitron',marginBottom:'6px'}}>CAPSULEER AUTHENTICATION</div>
         <div style={{fontSize:'26px',fontWeight:900,letterSpacing:'4px',fontFamily:'Orbitron',
           background:'linear-gradient(135deg,#0088dd,#0044aa,#4488ff)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',
-          animation:'flicker 7s infinite',marginBottom:'2px'}}>NEW EDEN PROTOCOL</div>
-        <div style={{fontSize:'9px',letterSpacing:'3px',color:'#0a2040',fontFamily:'Orbitron',marginBottom:'28px'}}>AI-POWERED ENGAGEMENT SYSTEM</div>
-        <div style={{color:'#1a2e40',fontFamily:'Share Tech Mono',fontSize:'11px',lineHeight:1.85,marginBottom:'28px',textAlign:'left',borderLeft:'2px solid #081828',paddingLeft:'14px'}}>
-          Capsuleer, authenticate to the New Eden engagement grid. Your tactical decisions will be documented by an embedded Scope News correspondent in real time.
+          animation:'flicker 7s infinite',marginBottom:'24px'}}>NEW EDEN PROTOCOL</div>
+        <div style={{textAlign:'left',marginBottom:'20px'}}>
+          {[
+            ['FRONT / BACK ROWS','Deploy ships to front (combat) or back (protected). Only ranged ships fire from back.'],
+            ['FRONT BLOCKS FIRST','Attackers must clear your front row before hitting back or your pod.'],
+            ['NULLIFIER','Stiletto bypasses rows entirely — hits pod direct.'],
+            ['DOOMSDAY','Revelation bleeds excess damage through to the enemy capsuleer.'],
+          ].map(([k,v])=>(
+            <div key={k} style={{display:'flex',gap:'10px',marginBottom:'8px',borderLeft:'1px solid #0a1828',paddingLeft:'10px'}}>
+              <span style={{fontFamily:'Orbitron',fontSize:'7px',color:'#004488',minWidth:'90px',flexShrink:0,paddingTop:'2px'}}>{k}</span>
+              <span style={{fontFamily:'Share Tech Mono',fontSize:'10px',color:'#1a2e40',lineHeight:1.6}}>{v}</span>
+            </div>
+          ))}
         </div>
-        <label style={{fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'2px',color:'#004488',display:'block',marginBottom:'6px'}}>OPENAI API KEY</label>
-        <input type="password" placeholder="sk-..." value={keyInput} onChange={e=>setKeyInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&onStart()}
-          style={{width:'100%',background:'#030810',border:'1px solid #0a1c30',color:'#6688aa',padding:'10px 12px',fontFamily:'Share Tech Mono',fontSize:'12px',outline:'none',clipPath:'polygon(6px 0%,100% 0%,100% calc(100% - 6px),calc(100% - 6px) 100%,0% 100%,0% 6px)'}}/>
-        {keyError&&<div style={{color:'#ff4444',fontSize:'9px',fontFamily:'Orbitron',marginTop:'4px',letterSpacing:'1px'}}>{keyError}</div>}
-        <div style={{color:'#081420',fontFamily:'Share Tech Mono',fontSize:'9px',marginTop:'4px'}}>Key used locally — not stored or transmitted outside OpenAI.</div>
-        <button onClick={onStart} style={{width:'100%',background:'rgba(0,100,200,.08)',border:'1px solid #004488',color:'#0088cc',padding:'12px',fontFamily:'Orbitron',fontSize:'9px',letterSpacing:'3px',cursor:'pointer',marginTop:'16px',clipPath:'polygon(8px 0%,100% 0%,100% calc(100% - 8px),calc(100% - 8px) 100%,0% 100%,0% 8px)',transition:'all .2s'}}>
-          ⟶ CONNECT TO THE GRID
+        <button onClick={onStart} style={{width:'100%',background:'rgba(0,100,200,.08)',border:'1px solid #004488',color:'#0088cc',padding:'14px',fontFamily:'Orbitron',fontSize:'10px',letterSpacing:'4px',cursor:'pointer',transition:'all .2s'}}>
+          ⟶ WARP IN
         </button>
-        <div style={{color:'#080f18',fontFamily:'Share Tech Mono',fontSize:'9px',marginTop:'12px'}}>Uses GPT-4o-mini · ~$0.001 per engagement</div>
       </div>
     </div>
   );
@@ -590,18 +650,16 @@ function InitScreen({keyInput,setKeyInput,keyError,onStart}) {
 function StatusBar({label,hp,handCount,core,maxCore,isPlayer,isTargetable,onTarget}) {
   const hpColor=hp>12?'#00aaff':hp>6?'#ffaa22':'#ff3344';
   return (
-    <div onClick={isTargetable?onTarget:undefined} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 10px',
+    <div onClick={isTargetable?onTarget:undefined} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 10px',
       background:isTargetable?'rgba(255,50,50,.08)':'rgba(0,0,0,.5)',
-      border:`1px solid ${isTargetable?'#ff334455':'rgba(0,80,160,.2)'}`,
-      cursor:isTargetable?'pointer':'default',
-      boxShadow:isTargetable?'0 0 18px #ff334422':isPlayer?'inset 0 0 20px rgba(0,80,160,.08)':'none',
-      transition:'all .2s',clipPath:'polygon(0 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%)'}}>
-      <span style={{fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'3px',color:isTargetable?'#ff3344':'#0a2040'}}>{isTargetable?'🎯 SELECT TARGET':label}</span>
+      border:`1px solid ${isTargetable?'#ff334455':'rgba(0,80,160,.15)'}`,
+      cursor:isTargetable?'pointer':'default',boxShadow:isTargetable?'0 0 18px #ff334422':'none',transition:'all .2s'}}>
+      <span style={{fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'3px',color:isTargetable?'#ff5566':'#0a2040'}}>
+        {isTargetable?'🎯 CLICK TO TARGET POD':label}
+      </span>
       <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
-        <div style={{fontFamily:'Orbitron',fontSize:'14px',fontWeight:700,color:hpColor,textShadow:`0 0 10px ${hpColor}66`,transition:'color .4s'}}>
-          {isPlayer?'♦':'☠'} {hp}
-        </div>
-        {!isPlayer&&handCount!==undefined&&<span style={{fontSize:'8px',color:'#0a1828',fontFamily:'Orbitron'}}>✋{handCount}</span>}
+        <div style={{fontFamily:'Orbitron',fontSize:'14px',fontWeight:700,color:hpColor,textShadow:`0 0 10px ${hpColor}66`,transition:'color .4s'}}>{isPlayer?'♦':'☠'} {hp}</div>
+        {!isPlayer&&<span style={{fontSize:'8px',color:'#0a1828',fontFamily:'Orbitron'}}>✋{handCount}</span>}
         {isPlayer&&maxCore&&<CapBar core={core} max={maxCore}/>}
       </div>
     </div>
@@ -610,113 +668,141 @@ function StatusBar({label,hp,handCount,core,maxCore,isPlayer,isTargetable,onTarg
 
 function CapBar({core,max}) {
   return (
-    <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
-      <span style={{fontFamily:'Orbitron',fontSize:'7px',color:'#0a2040',letterSpacing:'1px'}}>CAP</span>
+    <div style={{display:'flex',alignItems:'center',gap:'3px'}}>
+      <span style={{fontFamily:'Orbitron',fontSize:'6px',color:'#0a2040',letterSpacing:'1px'}}>CAP</span>
       <div style={{display:'flex',gap:'2px'}}>
         {Array.from({length:max},(_,i)=>(
-          <div key={i} style={{width:'9px',height:'9px',
-            background:i<core?'#ffaa22':'#08100a',
-            border:`1px solid ${i<core?'#ffaa22':'#0e1a0e'}`,
-            boxShadow:i<core?'0 0 5px #ffaa2299':'none',
-            transition:'all .25s',
-            clipPath:'polygon(2px 0%,100% 0%,100% calc(100% - 2px),calc(100% - 2px) 100%,0% 100%,0% 2px)'}}/>
+          <div key={i} style={{width:'8px',height:'8px',background:i<core?'#ffaa22':'#07100a',border:`1px solid ${i<core?'#ffaa22':'#0e1a0e'}`,boxShadow:i<core?'0 0 4px #ffaa2299':'none',transition:'all .25s'}}/>
         ))}
       </div>
-      <span style={{fontFamily:'Orbitron',fontSize:'11px',fontWeight:700,color:'#ffaa22'}}>{core}/{max}</span>
+      <span style={{fontFamily:'Orbitron',fontSize:'10px',fontWeight:700,color:'#ffaa22'}}>{core}/{max}</span>
     </div>
   );
 }
 
-// ── BATTLE FIELD ──────────────────────────────────────────────────────────────
-function BattleField({units,isPlayer,attacking,targeting,onUnitClick}) {
-  const tgtable=()=>!targeting?false:(!isPlayer&&['damage3','destroy'].includes(targeting.ability))||(isPlayer&&targeting.ability==='buff');
-  const canSel=u=>tgtable()||(isPlayer&&!targeting&&!u.tapped);
+// ── TACTICAL ROW ──────────────────────────────────────────────────────────────
+function TacticalRow({label,ships,isPlayerRow,isFront,attackers,targeting,canTargetShip,canSelectAttacker,onShipClick}) {
+  const isEmpty=ships.length===0;
   return (
-    <div style={{display:'flex',gap:'6px',padding:'6px',minHeight:'100px',flexWrap:'wrap',alignItems:'center',
-      background:'rgba(0,0,0,.22)',border:'1px solid rgba(0,80,160,.1)',
-      clipPath:'polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%)'}}>
-      {units.length===0&&<div style={{color:'#081520',fontFamily:'Orbitron',fontSize:'7px',margin:'auto',letterSpacing:'4px'}}>{isPlayer?'— YOUR FLEET —':'— ENEMY FLEET —'}</div>}
-      {units.map(unit=>{
-        const isAtk=attacking.includes(unit.uid),isTgt=tgtable(),sel=canSel(unit);
-        const bc=isAtk?'#ff6633':isTgt?'#ffaa22':unit.color;
-        return (
-          <div key={unit.uid}
-            className={`${sel?'card-lift':''} ${unit.justPlayed?'unit-deploy':''} unit-glow`}
-            onClick={sel?()=>onUnitClick(unit.uid):undefined}
-            style={{'--gc':unit.color,
-              width:'72px',minHeight:'94px',
-              background:`linear-gradient(160deg,#03080f,${unit.color}18)`,
-              border:`1px solid ${bc}77`,padding:'5px 4px',textAlign:'center',position:'relative',
-              opacity:unit.tapped?.45:1,
-              transform:unit.tapped?'rotate(9deg) translateY(3px)':'none',
-              transition:'opacity .3s,transform .3s',cursor:sel?'pointer':'default',
-              clipPath:'polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%)'}}>
-            {isAtk&&<div style={{position:'absolute',top:'-11px',left:'50%',transform:'translateX(-50%)',fontSize:'6px',color:'#ff6633',fontFamily:'Orbitron',whiteSpace:'nowrap',textShadow:'0 0 6px #ff6633'}}>⚔ ENGAGING</div>}
-            {isTgt&&<div style={{position:'absolute',inset:0,border:'1px solid #ffaa2277',pointerEvents:'none'}}/>}
-            <div style={{fontSize:'20px',marginBottom:'2px'}}>{unit.icon}</div>
-            <div style={{fontSize:'6px',fontFamily:'Orbitron',color:unit.color,lineHeight:1.2,marginBottom:'1px',textShadow:`0 0 7px ${unit.color}66`}}>{unit.name}</div>
-            {unit.faction&&<div style={{fontSize:'5.5px',fontFamily:'Orbitron',color:unit.color+'88',marginBottom:'3px'}}>{unit.faction}</div>}
-            <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px',fontWeight:700}}>
-              <span style={{color:'#ff6633'}}>⚔{unit.atk}</span>
-              <span style={{color:'#00aaff'}}>♦{unit.currentHp}</span>
-            </div>
+    <div style={{display:'flex',gap:'4px',alignItems:'stretch',minHeight:isFront?'92px':'78px',
+      background:isFront?'rgba(0,30,60,.22)':'rgba(0,10,20,.15)',
+      border:`1px solid ${isFront?'rgba(0,80,160,.12)':'rgba(0,40,80,.08)'}`,
+      borderRadius:'2px',padding:'4px'}}>
+      {/* Row label */}
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+        width:'20px',flexShrink:0,gap:'2px'}}>
+        {label.split(' ').map((word,i)=>(
+          <div key={i} style={{fontFamily:'Orbitron',fontSize:'5px',letterSpacing:'1.5px',color:isFront?'#1a3a60':'#0d2030',writingMode:'vertical-rl',textOrientation:'mixed',transform:'rotate(180deg)'}}>
+            {word}
           </div>
-        );
-      })}
+        ))}
+      </div>
+      {/* Ships */}
+      <div style={{flex:1,display:'flex',gap:'5px',flexWrap:'wrap',alignItems:'center'}}>
+        {isEmpty&&<div style={{color:'#071018',fontFamily:'Orbitron',fontSize:'7px',margin:'auto',letterSpacing:'3px'}}>
+          {isPlayerRow?`— ${label} EMPTY —`:`— ENEMY ${label} CLEAR —`}
+        </div>}
+        {ships.map(unit=>{
+          const isAtk=attackers?.includes(unit.uid);
+          const isTgt=canTargetShip?.(unit);
+          const selectable=isTgt||(canSelectAttacker?.(unit));
+          const bc=isAtk?'#ff6633':isTgt?'#ffaa22':unit.color;
+          return (
+            <div key={unit.uid}
+              className={`${selectable?'card-lift':''} ${unit.justPlayed?'unit-deploy':''} unit-glow`}
+              onClick={selectable?()=>onShipClick(unit):undefined}
+              style={{'--gc':unit.color,'--tc':isTgt?'#ffaa22':'transparent',
+                width:'66px',minHeight:isFront?'78px':'68px',
+                background:`linear-gradient(160deg,#03080f,${unit.color}18)`,
+                border:`1px solid ${bc}${isAtk||isTgt?'99':'66'}`,
+                padding:'4px 3px',textAlign:'center',position:'relative',
+                opacity:unit.tapped?.45:1,
+                transform:unit.tapped?'rotate(9deg) translateY(3px)':'none',
+                transition:'opacity .3s,transform .3s',cursor:selectable?'pointer':'default',
+              }}>
+              {isAtk&&<div style={{position:'absolute',top:'-11px',left:'50%',transform:'translateX(-50%)',fontSize:'5.5px',color:'#ff6633',fontFamily:'Orbitron',whiteSpace:'nowrap'}}>⚔ ENGAGING</div>}
+              {isTgt&&<div className="target-pulse" style={{'--tc':'#ffaa22',position:'absolute',inset:0,border:'2px solid #ffaa2266',pointerEvents:'none'}}/>}
+              {unit.ability==='ranged'&&<div style={{position:'absolute',top:'2px',left:'2px',fontFamily:'Orbitron',fontSize:'5px',color:unit.color,letterSpacing:'0px'}}>RANGED</div>}
+              <div style={{fontSize:'18px',margin:`${unit.ability==='ranged'?'8px':isFront?'4px':'2px'} 0 2px`}}>{unit.icon}</div>
+              <div style={{fontSize:'6px',fontFamily:'Orbitron',color:unit.color,lineHeight:1.2,marginBottom:'1px',textShadow:`0 0 6px ${unit.color}66`}}>{unit.name}</div>
+              <div style={{fontSize:'5.5px',fontFamily:'Orbitron',color:unit.color+'77',marginBottom:'2px'}}>{unit.faction}</div>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'10px',fontWeight:700}}>
+                <span style={{color:'#ff6633'}}>⚔{unit.atk}</span>
+                <span style={{color:'#00aaff'}}>♦{unit.currentHp}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 // ── CONTROL ZONE ──────────────────────────────────────────────────────────────
-function ControlZone({log,phase,attackerCount,aiThinking,isTargeting,targetName,onAttack,onResolve,onEnd,onCancel}) {
-  const logColors=['#99bbcc','#6688aa','#445566','#2d3f50','#1e2d3a'];
+function ControlZone({phase,attackerCount,aiThinking,isTargeting,targetName,isPendingDeploy,pendingName,onAttack,onResolve,onEnd,onCancelTarget,onCancelDeploy,onDeployFront,onDeployBack}) {
   return (
-    <div style={{display:'flex',gap:'8px',background:'rgba(0,0,0,.32)',border:'1px solid rgba(0,80,160,.08)',padding:'5px'}}>
-      <div style={{flex:1,height:'70px',overflowY:'auto',fontSize:'9px',lineHeight:'1.65',fontFamily:'Share Tech Mono'}}>
-        {log.map((l,i)=><div key={i} style={{color:logColors[Math.min(i,logColors.length-1)],transition:'color .3s'}}>{l}</div>)}
-      </div>
-      <div style={{display:'flex',flexDirection:'column',gap:'4px',justifyContent:'center',minWidth:'120px'}}>
-        {isTargeting?(<>
-          <div style={{fontFamily:'Orbitron',fontSize:'7px',color:'#ffaa22',textAlign:'center',letterSpacing:'1px'}}>🎯 {targetName}</div>
-          <div style={{fontFamily:'Orbitron',fontSize:'6px',color:'#332200',textAlign:'center'}}>select a target</div>
-          <EveBtn label="✕ CANCEL" color="#ffaa22" onClick={onCancel}/>
-        </>):(<>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',
+      background:'rgba(0,0,0,.35)',border:'1px solid rgba(0,80,160,.1)',padding:'6px 8px',minHeight:'58px'}}>
+      {isPendingDeploy?(
+        <>
+          <div style={{fontFamily:'Orbitron',fontSize:'7px',color:'#0066aa',letterSpacing:'1px',textAlign:'center'}}>
+            DEPLOY <span style={{color:'#44aaff'}}>{pendingName}</span> TO:
+          </div>
+          <EveBtn label="▲ FRONT LINE" color="#00aaff" onClick={onDeployFront}/>
+          <EveBtn label="▼ LONG RANGE" color="#33ddaa" onClick={onDeployBack}/>
+          <EveBtn label="✕" color="#ff6633" onClick={onCancelDeploy}/>
+        </>
+      ):isTargeting?(
+        <>
+          <div style={{fontFamily:'Orbitron',fontSize:'7px',color:'#ffaa22',textAlign:'center',letterSpacing:'1px'}}>🎯 {targetName} — select target</div>
+          <EveBtn label="✕ CANCEL" color="#ffaa22" onClick={onCancelTarget}/>
+        </>
+      ):(
+        <>
           {phase==='player-play'   &&<EveBtn label="⚔ ENGAGE" color="#ff6633" onClick={onAttack}/>}
-          {phase==='player-attack' &&<EveBtn label={`✓ RESOLVE (${attackerCount})`} color="#ff6633" onClick={onResolve} active/>}
-          <EveBtn label={aiThinking?'⟳ ENEMY FLEET...':'END TURN'} color="#0088cc" disabled={phase==='ai-turn'||phase==='game-over'} onClick={onEnd}/>
-        </>)}
-      </div>
+          {phase==='player-attack' &&<EveBtn label={`✓ RESOLVE (${attackerCount} attacking)`} color="#ff6633" onClick={onResolve} active/>}
+          <EveBtn label={aiThinking?'⟳ ENEMY FLEET ACTIVE':'END TURN ▶'} color="#0088cc" disabled={phase==='ai-turn'||phase==='game-over'} onClick={onEnd}/>
+          {phase==='player-attack'&&<div style={{fontFamily:'Share Tech Mono',fontSize:'9px',color:'#1a2a38'}}>Click ships to select attackers · Front row + Ranged only</div>}
+          {phase==='player-play'&&<div style={{fontFamily:'Share Tech Mono',fontSize:'9px',color:'#1a2a38'}}>Click card → select row to deploy · or click ENGAGE</div>}
+        </>
+      )}
     </div>
   );
 }
+
 function EveBtn({label,color,disabled,onClick,active}){
-  return <button onClick={onClick} disabled={disabled} className="btn-eve" style={{background:active?`${color}18`:'rgba(0,0,0,.35)',border:`1px solid ${disabled?'#0a0f18':color+'66'}`,color:disabled?'#0d1828':color,padding:'5px 6px',fontFamily:'Orbitron',fontSize:'7.5px',letterSpacing:'1.5px',cursor:disabled?'not-allowed':'pointer',boxShadow:active?`0 0 10px ${color}44`:'none'}}>{label}</button>;
+  return <button onClick={onClick} disabled={disabled} className="btn-eve" style={{background:active?`${color}18`:'rgba(0,0,0,.4)',border:`1px solid ${disabled?'#0a0f18':color+'55'}`,color:disabled?'#0d1828':color,padding:'6px 10px',fontFamily:'Orbitron',fontSize:'7.5px',letterSpacing:'1.5px',cursor:disabled?'not-allowed':'pointer',flexShrink:0,boxShadow:active?`0 0 10px ${color}44`:'none'}}>{label}</button>;
 }
 
 // ── HAND ──────────────────────────────────────────────────────────────────────
-function Hand({cards,selected,core,phase,onSelect,onPlay}) {
+function Hand({cards,selected,pendingDeploy,core,phase,onSelect,onAction}) {
   return (
-    <div style={{display:'flex',gap:'4px',padding:'3px 0 6px',overflowX:'auto',alignItems:'flex-end',minHeight:'120px'}}>
-      {cards.length===0&&<div style={{color:'#080f18',fontFamily:'Orbitron',fontSize:'7px',margin:'auto',letterSpacing:'3px'}}>NO MODULES IN RESERVE</div>}
+    <div style={{display:'flex',gap:'4px',padding:'3px 0 4px',overflowX:'auto',alignItems:'flex-end',minHeight:'112px',flexShrink:0}}>
+      {cards.length===0&&<div style={{color:'#080f18',fontFamily:'Orbitron',fontSize:'7px',margin:'auto',letterSpacing:'3px'}}>NO CARDS IN RESERVE</div>}
       {cards.map(card=>{
-        const sel=selected===card.uid,affordable=card.cost<=core,canPlay=affordable&&phase==='player-play';
+        const isPending=pendingDeploy?.uid===card.uid;
+        const sel=selected===card.uid||isPending;
+        const affordable=card.cost<=core;
+        const canPlay=affordable&&phase==='player-play';
         return (
           <div key={card.uid} className="card-lift"
-            onClick={sel&&canPlay?()=>onPlay(card.uid):()=>onSelect(card.uid)}
-            style={{width:'80px',minHeight:'112px',flexShrink:0,
-              background:sel?`linear-gradient(160deg,${card.color}1e,${card.color}0a)`:'linear-gradient(160deg,#07090f,#03050a)',
-              border:`1px solid ${sel?card.color:'#0d1520'}`,padding:'6px 4px',
-              boxShadow:sel?`0 0 22px ${card.color}55,0 0 45px ${card.color}18,0 -6px 18px ${card.color}28`:'0 2px 8px rgba(0,0,0,.7)',
-              opacity:!affordable&&!sel?.3:1,transform:sel?'translateY(-14px)':'none',position:'relative',textAlign:'center',
-              clipPath:'polygon(0 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%)'}}>
-            <div style={{position:'absolute',top:'2px',right:'3px',background:'#ffaa2212',border:'1px solid #ffaa2244',padding:'0 3px',color:'#ffaa22',fontFamily:'Orbitron',fontSize:'7px',fontWeight:700,clipPath:'polygon(3px 0%,100% 0%,100% 100%,0% 100%,0% 3px)'}}>{card.cost}</div>
-            <div style={{position:'absolute',top:'3px',left:'3px',width:'5px',height:'5px',background:card.color,boxShadow:`0 0 6px ${card.color}`,clipPath:'polygon(50% 0%,100% 50%,50% 100%,0% 50%)'}}/>
-            <div style={{fontSize:'20px',margin:'5px 0 2px'}}>{card.icon}</div>
+            onClick={sel&&canPlay?()=>onAction(card.uid):()=>onSelect(card.uid)}
+            style={{width:'72px',minHeight:'100px',flexShrink:0,
+              background:sel?`linear-gradient(160deg,${card.color}22,${card.color}0a)`:'linear-gradient(160deg,#07090f,#03050a)',
+              border:`1px solid ${sel?card.color:isPending?card.color+'88':'#0d1520'}`,
+              padding:'5px 3px',
+              boxShadow:sel?`0 0 20px ${card.color}55,0 0 42px ${card.color}18,0 -5px 16px ${card.color}28`:'0 2px 8px rgba(0,0,0,.7)',
+              opacity:!affordable&&!sel?.28:1,transform:sel?'translateY(-13px)':'none',position:'relative',textAlign:'center'}}>
+            <div style={{position:'absolute',top:'2px',right:'2px',background:'#ffaa2212',border:'1px solid #ffaa2244',padding:'0 3px',color:'#ffaa22',fontFamily:'Orbitron',fontSize:'7px',fontWeight:700}}>{card.cost}</div>
+            <div style={{position:'absolute',top:'3px',left:'3px',width:'5px',height:'5px',background:card.color,boxShadow:`0 0 5px ${card.color}`,clipPath:'polygon(50% 0%,100% 50%,50% 100%,0% 50%)'}}/>
+            <div style={{fontSize:'19px',margin:'5px 0 2px'}}>{card.icon}</div>
             <div style={{fontSize:'6.5px',fontFamily:'Orbitron',color:card.color,lineHeight:1.2,marginBottom:'1px',textShadow:`0 0 7px ${card.color}66`}}>{card.name}</div>
-            {card.faction&&<div style={{fontSize:'5.5px',fontFamily:'Orbitron',color:card.color+'77',marginBottom:'2px'}}>{card.faction}</div>}
-            {card.type==='ship'&&<div style={{display:'flex',justifyContent:'center',gap:'5px',fontSize:'10px',fontWeight:700,marginBottom:'2px'}}><span style={{color:'#ff6633'}}>⚔{card.atk}</span><span style={{color:'#00aaff'}}>♦{card.def}</span></div>}
-            <div style={{fontSize:'5.5px',color:'#1a2e40',lineHeight:1.35}}>{card.effect}</div>
-            {sel&&canPlay&&<div style={{position:'absolute',bottom:'-14px',left:'50%',transform:'translateX(-50%)',fontSize:'6px',color:'#00aaff',fontFamily:'Orbitron',whiteSpace:'nowrap',textShadow:'0 0 6px #00aaff'}}>▲ DEPLOY</div>}
+            {card.faction&&<div style={{fontSize:'5.5px',fontFamily:'Orbitron',color:card.color+'66',marginBottom:'2px'}}>{card.faction}</div>}
+            {card.type==='ship'&&<div style={{display:'flex',justifyContent:'center',gap:'4px',fontSize:'9px',fontWeight:700,marginBottom:'1px'}}><span style={{color:'#ff6633'}}>⚔{card.atk}</span><span style={{color:'#00aaff'}}>♦{card.def}</span></div>}
+            <div style={{fontSize:'5.5px',color:'#1a2e3e',lineHeight:1.3,marginBottom:'2px'}}>{card.effect}</div>
+            {sel&&card.type==='ship'&&canPlay&&!isPending&&<div style={{position:'absolute',bottom:'-13px',left:'50%',transform:'translateX(-50%)',fontSize:'6px',color:'#00aaff',fontFamily:'Orbitron',whiteSpace:'nowrap'}}>▲ CHOOSE ROW</div>}
+            {sel&&card.type==='module'&&canPlay&&<div style={{position:'absolute',bottom:'-13px',left:'50%',transform:'translateX(-50%)',fontSize:'6px',color:'#00aaff',fontFamily:'Orbitron',whiteSpace:'nowrap'}}>▲ ACTIVATE</div>}
+            {isPending&&<div style={{position:'absolute',bottom:'-13px',left:'50%',transform:'translateX(-50%)',fontSize:'6px',color:'#33ddaa',fontFamily:'Orbitron',whiteSpace:'nowrap'}}>DEPLOYING...</div>}
           </div>
         );
       })}
@@ -725,19 +811,21 @@ function Hand({cards,selected,core,phase,onSelect,onPlay}) {
 }
 
 // ── WINNER OVERLAY ────────────────────────────────────────────────────────────
-function WinnerOverlay({winner,lastStory,onReset}) {
+function WinnerOverlay({winner,onReset}) {
   const won=winner==='player';
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,1,8,.97)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:200,fontFamily:'Orbitron'}}>
-      <div style={{fontSize:'50px',marginBottom:'12px'}}>{won?'🏆':'💀'}</div>
-      <div style={{fontSize:'11px',letterSpacing:'6px',color:won?'#00aaff':'#ff3344',marginBottom:'4px'}}>{won?'GF IN LOCAL':'PODDED'}</div>
-      <div style={{fontSize:'30px',fontWeight:900,letterSpacing:'4px',
+      <div style={{fontSize:'48px',marginBottom:'12px'}}>{won?'🏆':'💀'}</div>
+      <div style={{fontSize:'9px',letterSpacing:'6px',color:won?'#0088ff':'#ff3344',marginBottom:'4px'}}>{won?'GF IN LOCAL':'PODDED'}</div>
+      <div style={{fontSize:'28px',fontWeight:900,letterSpacing:'4px',
         background:won?'linear-gradient(135deg,#00aaff,#44ccff)':'linear-gradient(135deg,#ff3344,#ff7744)',
-        WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',marginBottom:'5px'}}>
+        WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',marginBottom:'6px'}}>
         {won?'VICTORY':'DEFEAT'}
       </div>
-      {lastStory&&<div style={{maxWidth:'400px',fontFamily:'Share Tech Mono',fontSize:'12px',lineHeight:1.85,color:'#1a2e40',textAlign:'center',margin:'18px 0 28px',borderLeft:'2px solid #081828',padding:'0 16px'}}>{lastStory}</div>}
-      <button onClick={onReset} style={{background:'rgba(0,100,200,.08)',border:'1px solid #004488',color:'#0088cc',padding:'11px 30px',fontFamily:'Orbitron',fontSize:'9px',letterSpacing:'3px',cursor:'pointer',clipPath:'polygon(8px 0%,100% 0%,100% calc(100% - 8px),calc(100% - 8px) 100%,0% 100%,0% 8px)'}}>
+      <div style={{fontFamily:'Share Tech Mono',fontSize:'11px',color:'#1a2e40',marginBottom:'28px',textAlign:'center'}}>
+        {won?'Sovereignty secured. Clone contract expired.':'Ship destroyed. Pod express activated.'}
+      </div>
+      <button onClick={onReset} style={{background:'rgba(0,100,200,.08)',border:'1px solid #004488',color:'#0088cc',padding:'11px 32px',fontFamily:'Orbitron',fontSize:'9px',letterSpacing:'3px',cursor:'pointer'}}>
         ↺ RESHIP &amp; REDOCK
       </button>
     </div>
