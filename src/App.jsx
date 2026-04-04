@@ -212,13 +212,18 @@ export default function App() {
     if(!g || g.phase!=='ai-turn' || g.aiThinking) return;
     setG(s=>({...s,aiThinking:true}));
     timerRef.current = setTimeout(()=>{
-      setG(prev=>{
-        const {newState, events} = runAiTurn(prev);
+      // Use stateRef so we always have current state — never call side effects
+      // like enqueueNarrative inside a setG updater or React silently breaks.
+      const current = stateRef.current;
+      if(!current) return;
+      try {
+        const {newState, events} = runAiTurn(current);
         const ctx = {
-          turn:prev.turn, playerHp:prev.player.hp, aiHp:prev.ai.hp,
-          playerField: prev.player.field.map(u=>u.name).join(', ')||'empty',
-          aiField: prev.ai.field.map(u=>u.name).join(', ')||'empty',
+          turn:current.turn, playerHp:current.player.hp, aiHp:current.ai.hp,
+          playerField: current.player.field.map(u=>u.name).join(', ')||'empty',
+          aiField: current.ai.field.map(u=>u.name).join(', ')||'empty',
         };
+        setG(newState);
         for(const ev of events) enqueueNarrative(ev, ctx);
         if(newState.winner) {
           enqueueNarrative(
@@ -228,8 +233,11 @@ export default function App() {
             {...ctx, playerHp:newState.player.hp, aiHp:newState.ai.hp}
           );
         }
-        return newState;
-      });
+      } catch(err) {
+        console.error('AI turn error:', err);
+        setG(s=>({...s, phase:'player-play', aiThinking:false,
+          turn:(s.turn||1)+1, player:{...s.player, core:s.player.maxCore}}));
+      }
     }, 1600);
     return ()=>clearTimeout(timerRef.current);
   },[g?.phase, g?.aiThinking]);
