@@ -181,6 +181,7 @@ export default function App() {
   const timerRef = useRef(null);
   const queueRef = useRef([]);
   const processingRef = useRef(false);
+  const keyRef = useRef('');
 
   const stateRef = useRef(null);
   useEffect(()=>{ stateRef.current = g; },[g]);
@@ -196,7 +197,7 @@ export default function App() {
     processingRef.current = true;
     const {event, context} = queueRef.current.shift();
     setNarLoading(true);
-    const text = await fetchNarrative(apiKey||stateRef.current?.apiKey, event, context);
+    const text = await fetchNarrative(keyRef.current, event, context);
     if(text) {
       setStory(prev => [{text, turn:context.turn}, ...prev].slice(0,20));
       setTimeout(()=>storyRef.current?.scrollTo({top:0,behavior:'smooth'}),50);
@@ -238,6 +239,7 @@ export default function App() {
     if(!keyInput.trim().startsWith('sk-')) { setKeyError('Key should start with sk-'); return; }
     setKeyError('');
     const key = keyInput.trim();
+    keyRef.current = key;
     setApiKey(key);
     const newG = {...initGame(), apiKey:key};
     setG(newG);
@@ -250,7 +252,7 @@ export default function App() {
   };
 
   const resetGame = () => {
-    setG(null); setStory([]); setApiKey(''); setKeyInput(''); processingRef.current=false; queueRef.current=[];
+    setG(null); setStory([]); setApiKey(''); setKeyInput(''); keyRef.current=''; processingRef.current=false; queueRef.current=[];
   };
 
   // ── GAME ACTIONS ──────────────────────────────────────────────────────────
