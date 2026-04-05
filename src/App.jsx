@@ -235,6 +235,7 @@ export default function App() {
   const [particles, setParticles] = useState([]);
   const [beams,     setBeams]     = useState([]);
   const [screenFx,  setScreenFx]  = useState('');
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const aiLockRef = useRef(false);
   const timerRef  = useRef(null);
 
@@ -441,6 +442,7 @@ export default function App() {
         @keyframes unitGlow{0%,100%{box-shadow:0 0 6px var(--gc)}50%{box-shadow:0 0 18px var(--gc),0 0 36px var(--gc)33}}
         @keyframes popIn{0%{opacity:0;transform:translateX(-50%) translateY(4px) scale(.92)}100%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
         @keyframes targetRing{0%,100%{box-shadow:0 0 0 2px var(--tc)}50%{box-shadow:0 0 0 4px var(--tc),0 0 16px var(--tc)}}
+        @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
         .card-hand{transition:transform .14s,box-shadow .14s;cursor:pointer;transform-style:preserve-3d}
         .card-hand:hover{z-index:30}
         .unit-glow{animation:unitGlow 2.8s ease-in-out infinite}
@@ -472,14 +474,8 @@ export default function App() {
         {beams.map(b=>(<div key={b.id} style={{position:'absolute',left:0,right:0,top:b.fromPlayer?'62%':'36%',height:'3px',background:`linear-gradient(${b.fromPlayer?90:270}deg,transparent,${b.color}ee,transparent)`,boxShadow:`0 0 12px ${b.color},0 0 30px ${b.color}66`,transformOrigin:b.fromPlayer?'left':'right',animation:'beamAnim .62s ease-out forwards'}}/>))}
       </div>
 
-      {/* TOASTS */}
-      <div style={{position:'fixed',top:'10px',right:'10px',zIndex:70,display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-end',pointerEvents:'none'}}>
-        {g.toasts.slice(0,6).map((t,i)=>(
-          <div key={t.id} className="toast-in" style={{padding:'5px 10px',background:'rgba(6,13,26,.93)',border:`1px solid ${t.color}44`,borderLeft:`3px solid ${t.color}`,borderRadius:'6px',fontFamily:'Share Tech Mono',fontSize:'11px',color:i===0?t.color:`${t.color}88`,maxWidth:'260px',backdropFilter:'blur(10px)'}}>
-            {t.msg}
-          </div>
-        ))}
-      </div>
+      {/* SLIDE-UP LOG DRAWER */}
+      <LogDrawer open={drawerOpen} onToggle={()=>setDrawerOpen(o=>!o)} toasts={g.toasts}/>
 
       {/* BOARD */}
       <div style={{position:'relative',zIndex:2,display:'flex',flexDirection:'column',height:'100vh',padding:'8px 14px',gap:'5px'}}>
@@ -539,6 +535,86 @@ export default function App() {
           core={g.player.core} phase={g.phase} onSelect={selectCard} onActivate={activateCard}
           isPending={isPending} pendingDeploy={g.pendingDeploy}/>
       </div>
+
+      {/* CARD PREVIEW OVERLAY — slides up from bottom when a card is selected */}
+      {(()=>{
+        if(!g.selectedCard||g.phase!=='player-play') return null;
+        const card=g.player.hand.find(c=>c.uid===g.selectedCard);
+        if(!card) return null;
+        const affordable=card.cost<=g.player.core;
+        const isShip=card.type==='ship';
+        return (
+          <div style={{position:'fixed',inset:0,zIndex:80,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+            {/* Backdrop */}
+            <div onClick={()=>setG(s=>({...s,selectedCard:null}))}
+              style={{position:'absolute',inset:0,background:'rgba(0,0,0,.5)'}}/>
+            {/* Panel */}
+            <div style={{position:'relative',zIndex:1,
+              background:'rgba(8,14,30,.98)',
+              border:`2px solid ${card.color}77`,
+              borderBottom:'none',
+              borderRadius:'20px 20px 0 0',
+              padding:'16px 20px 32px',
+              width:'100%',maxWidth:'420px',
+              boxShadow:`0 -8px 40px ${card.color}33,0 -2px 0 ${card.color}55`,
+              backdropFilter:'blur(18px)',
+              animation:'slideUp .25s cubic-bezier(.32,1.25,.6,1)'}}>
+              <div style={{width:'36px',height:'3px',background:'rgba(255,255,255,.15)',borderRadius:'2px',margin:'0 auto 14px'}}/>
+              <div style={{display:'flex',gap:'16px',alignItems:'flex-start',marginBottom:'16px'}}>
+                {/* Art */}
+                <div style={{flexShrink:0,width:'88px',height:'100px',
+                  background:`linear-gradient(175deg,rgba(10,18,38,.95),${card.color}22)`,
+                  border:`1px solid ${card.color}44`,borderRadius:'12px',
+                  display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',position:'relative'}}>
+                  <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',opacity:.35}}>
+                    <ShipSVG id={card.id} color={card.color} size={80}/>
+                  </div>
+                  <div style={{position:'relative',zIndex:1,filter:`drop-shadow(0 0 8px ${card.color})`}}>
+                    <PixelArt cardId={card.id} color={card.color} px={8}/>
+                  </div>
+                </div>
+                {/* Text */}
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px'}}>
+                    <div style={{fontFamily:'Orbitron',fontWeight:900,fontSize:'22px',color:'#f1f5f9',lineHeight:1}}>{card.name}</div>
+                    <div style={{width:'26px',height:'26px',borderRadius:'50%',flexShrink:0,
+                      background:affordable?card.color:'#1e293b',
+                      display:'flex',alignItems:'center',justifyContent:'center',
+                      fontFamily:'Orbitron',fontWeight:700,fontSize:'13px',
+                      color:affordable?'#0f172a':'#334155',
+                      boxShadow:affordable?`0 0 12px ${card.color}`:''}}>{card.cost}</div>
+                  </div>
+                  {card.faction&&<div style={{fontFamily:'Share Tech Mono',fontSize:'12px',color:`${card.color}aa`,marginBottom:'8px'}}>{card.faction}</div>}
+                  {isShip&&<div style={{display:'flex',gap:'16px',marginBottom:'10px'}}>
+                    <div>
+                      <div style={{fontFamily:'Orbitron',fontWeight:700,fontSize:'26px',color:'#fb923c',lineHeight:1}}>{card.atk}</div>
+                      <div style={{fontFamily:'Orbitron',fontSize:'8px',color:'#fb923c66',letterSpacing:'1px'}}>ATK</div>
+                    </div>
+                    <div>
+                      <div style={{fontFamily:'Orbitron',fontWeight:700,fontSize:'26px',color:'#38bdf8',lineHeight:1}}>{card.def}</div>
+                      <div style={{fontFamily:'Orbitron',fontSize:'8px',color:'#38bdf866',letterSpacing:'1px'}}>DEF</div>
+                    </div>
+                  </div>}
+                  <div style={{fontFamily:'Share Tech Mono',fontSize:'13px',color:'#94a3b8',lineHeight:1.6}}>{card.effect}</div>
+                </div>
+              </div>
+              {/* Buttons */}
+              {affordable?(
+                <div style={{display:'flex',gap:'8px'}}>
+                  {isShip&&<>
+                    <button onClick={()=>deployToRow('front')} style={{flex:1,padding:'13px',background:'rgba(56,189,248,.15)',border:'1px solid #38bdf877',color:'#38bdf8',fontFamily:'Orbitron',fontSize:'11px',letterSpacing:'2px',cursor:'pointer',borderRadius:'10px',fontWeight:700}}>▲ FRONT</button>
+                    {card.ability==='ranged'&&<button onClick={()=>deployToRow('back')} style={{flex:1,padding:'13px',background:'rgba(52,211,153,.12)',border:'1px solid #34d39977',color:'#34d399',fontFamily:'Orbitron',fontSize:'11px',letterSpacing:'2px',cursor:'pointer',borderRadius:'10px',fontWeight:700}}>▼ BACK</button>}
+                  </>}
+                  {!isShip&&<button onClick={()=>activateCard(card.uid)} style={{flex:1,padding:'13px',background:`${card.color}18`,border:`1px solid ${card.color}77`,color:card.color,fontFamily:'Orbitron',fontSize:'11px',letterSpacing:'2px',cursor:'pointer',borderRadius:'10px',fontWeight:700}}>⚡ USE MODULE</button>}
+                  <button onClick={()=>setG(s=>({...s,selectedCard:null}))} style={{padding:'13px 16px',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',color:'#64748b',fontFamily:'Orbitron',fontSize:'11px',cursor:'pointer',borderRadius:'10px'}}>✕</button>
+                </div>
+              ):(
+                <div style={{textAlign:'center',fontFamily:'Orbitron',fontSize:'10px',color:'#334155',letterSpacing:'3px',padding:'8px'}}>NOT ENOUGH CAP</div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -785,6 +861,68 @@ function Hand({cards,selected,pendingUid,core,phase,onSelect,onActivate}) {
         );
       })}
     </div>
+  );
+}
+
+// ── LOG DRAWER ───────────────────────────────────────────────────────────────
+function LogDrawer({open, onToggle, toasts}) {
+  return (
+    <>
+      {/* Toggle button — fixed bottom-left, always visible */}
+      <button onClick={onToggle} style={{
+        position:'fixed',bottom:'16px',left:'16px',zIndex:75,
+        width:'44px',height:'44px',borderRadius:'50%',
+        background:open?'rgba(56,189,248,.2)':'rgba(6,13,26,.9)',
+        border:`2px solid ${open?'#38bdf8':'rgba(255,255,255,.12)'}`,
+        color:open?'#38bdf8':'#475569',
+        fontSize:'16px',cursor:'pointer',
+        boxShadow:open?'0 0 16px #38bdf844':'0 2px 12px rgba(0,0,0,.6)',
+        display:'flex',alignItems:'center',justifyContent:'center',
+        backdropFilter:'blur(10px)',transition:'all .2s',
+      }}>📋</button>
+
+      {/* Drawer */}
+      <div style={{
+        position:'fixed',bottom:0,left:0,right:0,zIndex:74,
+        transform:open?'translateY(0)':'translateY(100%)',
+        transition:'transform .3s cubic-bezier(.32,1.25,.6,1)',
+        background:'rgba(6,13,26,.97)',
+        borderTop:'1px solid rgba(255,255,255,.08)',
+        borderRadius:'20px 20px 0 0',
+        maxHeight:'55vh',display:'flex',flexDirection:'column',
+        backdropFilter:'blur(16px)',
+        boxShadow:'0 -4px 30px rgba(0,0,0,.6)',
+      }}>
+        {/* Handle + header */}
+        <div style={{padding:'10px 16px 6px',flexShrink:0}}>
+          <div style={{width:'36px',height:'3px',background:'rgba(255,255,255,.12)',borderRadius:'2px',margin:'0 auto 10px'}}/>
+          <div style={{fontFamily:'Orbitron',fontSize:'8px',letterSpacing:'4px',color:'#1e3a5f'}}>◈ COMBAT LOG</div>
+        </div>
+        {/* Entries */}
+        <div style={{overflowY:'auto',padding:'4px 16px 20px',display:'flex',flexDirection:'column',gap:'4px'}}>
+          {toasts.length===0&&(
+            <div style={{fontFamily:'Share Tech Mono',fontSize:'11px',color:'#0f172a',padding:'8px 0'}}>No events yet.</div>
+          )}
+          {toasts.map((t,i)=>(
+            <div key={t.id} style={{
+              display:'flex',gap:'8px',padding:'5px 8px',
+              background:'rgba(255,255,255,.02)',
+              borderLeft:`2px solid ${i===0?t.color:t.color+'44'}`,
+              borderRadius:'0 4px 4px 0',
+            }}>
+              <span style={{fontFamily:'Share Tech Mono',fontSize:'11px',
+                color:i===0?t.color:i<4?t.color+'99':'#1e293b',
+                lineHeight:1.4}}>
+                {t.msg}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Backdrop when open */}
+      {open&&<div onClick={onToggle} style={{position:'fixed',inset:0,zIndex:73,background:'rgba(0,0,0,.3)'}}/>}
+    </>
   );
 }
 
