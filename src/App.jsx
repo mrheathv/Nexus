@@ -315,6 +315,7 @@ export default function App() {
     // Works from either selectedCard (ship selected in hand) or pendingDeploy (legacy)
     const card = g?.player.hand.find(c=>c.uid===g?.selectedCard) || g?.pendingDeploy;
     if(!card||card.cost>g.player.core) return;
+    if(row==='back'&&card.ability!=='ranged') return; // only ranged ships go back
     setG(s=>{
       const selCard = s.player.hand.find(c=>c.uid===s.selectedCard) || s.pendingDeploy;
       const c=selCard; if(!c||c.cost>s.player.core) return s;
@@ -529,11 +530,7 @@ export default function App() {
             </div>
             <div style={{fontFamily:'Orbitron',fontSize:'6px',color:'#1e3a5f',letterSpacing:'2px'}}>HULL</div>
           </div>
-          <div style={{flex:1,height:'5px',background:'rgba(255,255,255,.06)',borderRadius:'3px',overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${Math.max(0,g.player.hp/20*100)}%`,
-              background:g.player.hp>12?'#38bdf8':g.player.hp>6?'#fbbf24':'#f43f5e',
-              borderRadius:'3px',transition:'width .4s'}}/>
-          </div>
+
           <CapBar core={g.player.core} max={g.player.maxCore}/>
         </div>
 
@@ -562,9 +559,7 @@ function EveHeader({label,hp,handCount,core,maxCore,isEnemy,isPlayer,turn,phaseL
         <div style={{fontFamily:'Orbitron',fontSize:'8px',letterSpacing:'3px',color:'#334155',marginBottom:'3px'}}>{label}</div>
         <div onClick={isTargetable?onTarget:undefined} style={{cursor:isTargetable?'pointer':'default',display:'flex',alignItems:'center',gap:'8px',padding:isTargetable?'3px 6px':0,border:isTargetable?'1px solid #f43f5e55':'1px solid transparent',borderRadius:'6px',background:isTargetable?'rgba(244,63,94,.07)':'transparent',transition:'all .2s'}}>
           {isTargetable&&<span style={{fontFamily:'Orbitron',fontSize:'7px',color:'#f43f5e',letterSpacing:'2px'}}>🎯 TARGET POD</span>}
-          <div style={{flex:1,height:'7px',background:'rgba(255,255,255,.06)',borderRadius:'4px',overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${Math.max(0,hp/20*100)}%`,background:hpColor,boxShadow:`0 0 8px ${hpColor}`,borderRadius:'4px',transition:'width .4s'}}/>
-          </div>
+
           <span style={{fontFamily:'Orbitron',fontWeight:700,fontSize:'16px',color:hpColor,textShadow:`0 0 10px ${hpColor}`,minWidth:'32px',textAlign:'right'}}>{hp}</span>
         </div>
       </div>
@@ -676,10 +671,11 @@ function ActionBar({phase,isPending,pendingName,isTargeting,targetName,attackerC
       {/* Ship selected — show row picker */}
       {isShipSelected&&!isPending&&!isTargeting&&phase==='player-play'&&<>
         <span style={{fontFamily:'Orbitron',fontSize:'9px',color:'#60a5fa',letterSpacing:'1px'}}>
-          DEPLOY <b style={{color:selectedCard.color}}>{selectedCard.name}</b> TO:
+          DEPLOY <b style={{color:selectedCard.color}}>{selectedCard.name}</b>
+          {selectedCard.ability!=='ranged'&&<span style={{color:'#334155'}}> — front line only</span>}
         </span>
         <Btn label="▲ FRONT LINE" color="#38bdf8" onClick={onFront}/>
-        <Btn label="▼ BACK ROW" color="#34d399" onClick={onBack}/>
+        {selectedCard?.ability==='ranged'&&<Btn label="▼ BACK ROW" color="#34d399" onClick={onBack}/>}
         <Btn label="✕" color="#64748b" onClick={onCancelSelect} small/>
       </>}
       {/* Module selected — show use button */}
@@ -694,7 +690,7 @@ function ActionBar({phase,isPending,pendingName,isTargeting,targetName,attackerC
       {isPending&&!isShipSelected&&<>
         <span style={{fontFamily:'Orbitron',fontSize:'9px',color:'#60a5fa',letterSpacing:'1px'}}>DEPLOY <b style={{color:'#f1f5f9'}}>{pendingName}</b> TO ROW:</span>
         <Btn label="▲ FRONT LINE" color="#38bdf8" onClick={onFront}/>
-        <Btn label="▼ BACK ROW" color="#34d399" onClick={onBack}/>
+        {selectedCard?.ability==='ranged'&&<Btn label="▼ BACK ROW" color="#34d399" onClick={onBack}/>}
         <Btn label="✕" color="#64748b" onClick={onCancelDeploy} small/>
       </>}
       {isTargeting&&<>
