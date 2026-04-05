@@ -110,6 +110,26 @@ let _uid = 1;
 const uid = () => _uid++;
 const shuffle = a => { const b=[...a]; for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]]} return b; };
 const buildDeck = () => shuffle([...CARDS,...CARDS].map(c=>({...c,uid:uid()})));
+
+const FACTION_SHIPS = {
+  CALDARI:  ['merlin','caracal','drake','raven'],
+  AMARR:    ['punisher','revelation','merlin','stiletto'],
+  MINMATAR: ['rifter','stiletto','tempest','vexor'],
+  GALLENTE: ['vexor','ishtar','dominix','drake'],
+};
+const MODULES_POOL = ['disruptor','analyzer','smartbomb','repair','cap_boost','stasis','ecm','nanite'];
+
+const buildFactionDeck = (faction) => {
+  const shipIds = FACTION_SHIPS[faction] || FACTION_SHIPS.CALDARI;
+  const ships = CARDS.filter(c => shipIds.includes(c.id));
+  const modules = CARDS.filter(c => c.type === 'module');
+  // 3 copies of each faction ship + 2 copies of all modules
+  const deck = [
+    ...ships, ...ships, ...ships,
+    ...modules, ...modules,
+  ];
+  return shuffle(deck.map(c=>({...c,uid:uid()})));
+};
 const drawN = (g,o,n) => { const d=[...g[o].deck],h=[...g[o].hand]; for(let i=0;i<n&&d.length;i++) h.push(d.shift()); return {...g,[o]:{...g[o],deck:d,hand:h}}; };
 const frontOf = f => f.filter(u=>u.row==='front');
 const backOf  = f => f.filter(u=>u.row==='back');
@@ -210,12 +230,15 @@ function runAiTurn(s) {
   return {newState:g};
 }
 
-function initGame() {
+function initGame(playerFaction='CALDARI') {
+  const factions = ['CALDARI','AMARR','MINMATAR','GALLENTE'];
+  const aiFaction = factions.filter(f=>f!==playerFaction)[Math.floor(Math.random()*3)];
   let s={phase:'player-play',turn:1,winner:null,aiThinking:false,
+    playerFaction, aiFaction,
     selectedCard:null,pendingDeploy:null,attackers:[],targeting:null,
-    toasts:[{id:uid(),msg:'Fleet engaged. New Eden local is hot.',color:'#38bdf8',ts:Date.now()}],
-    player:{hp:20,core:1,maxCore:1,deck:buildDeck(),hand:[],field:[]},
-    ai:   {hp:20,core:1,maxCore:1,deck:buildDeck(),hand:[],field:[]},
+    toasts:[{id:uid(),msg:`${playerFaction} vs ${aiFaction} — fleet engaged`,color:'#38bdf8',ts:Date.now()}],
+    player:{hp:20,core:1,maxCore:1,deck:buildFactionDeck(playerFaction),hand:[],field:[]},
+    ai:   {hp:20,core:1,maxCore:1,deck:buildFactionDeck(aiFaction),hand:[],field:[]},
   };
   s=drawN(s,'player',5); s=drawN(s,'ai',5);
   return s;
@@ -281,7 +304,7 @@ export default function App() {
   },[g?.phase]);
 
   // ── GAME ACTIONS ──────────────────────────────────────────────────────────
-  const startGame = () => { setG(initGame()); setScreen('game'); };
+  const startGame = (faction) => { setG(initGame(faction)); setScreen('game'); };
   const resetGame = () => { setG(null); setScreen('intro'); setParticles([]); setBeams([]); setScreenFx(''); aiLockRef.current=false; };
 
   const selectCard = cUid => {
@@ -484,7 +507,8 @@ export default function App() {
         <EveHeader label="HOSTILE CAPSULEER" hp={g.ai.hp} handCount={g.ai.hand.length}
           isEnemy turn={g.turn} phaseLabel={g.phase} isAiTurn={isAiTurn}
           isTargetable={isTargeting&&g.targeting.ability==='damage3'}
-          onTarget={()=>handleTarget('ai-pod',null)}/>
+          onTarget={()=>handleTarget('ai-pod',null)}
+          faction={g.aiFaction}/>
 
         {/* Enemy zones */}
         <BattleRow label="LONG RANGE" ships={backOf(g.ai.field)} isPlayer={false}
@@ -525,6 +549,11 @@ export default function App() {
               {g.player.hp}
             </div>
             <div style={{fontFamily:'Orbitron',fontSize:'6px',color:'#1e3a5f',letterSpacing:'2px'}}>HULL</div>
+          </div>
+          <div style={{fontFamily:'Orbitron',fontSize:'8px',letterSpacing:'2px',
+            color:{CALDARI:'#38bdf8',AMARR:'#fbbf24',MINMATAR:'#fb923c',GALLENTE:'#4ade80'}[g.playerFaction]||'#38bdf8',
+            borderLeft:`2px solid currentColor`,paddingLeft:'8px',lineHeight:1.3}}>
+            {g.playerFaction}
           </div>
 
           <CapBar core={g.player.core} max={g.player.maxCore}/>
@@ -620,8 +649,9 @@ export default function App() {
 }
 
 // ── EVE HEADER ────────────────────────────────────────────────────────────────
-function EveHeader({label,hp,handCount,core,maxCore,isEnemy,isPlayer,turn,phaseLabel,isAiTurn,isTargetable,onTarget}) {
+function EveHeader({label,hp,handCount,core,maxCore,isEnemy,isPlayer,turn,phaseLabel,isAiTurn,isTargetable,onTarget,faction}) {
   const hpColor=hp>12?'#38bdf8':hp>6?'#fbbf24':'#f43f5e';
+  const factionColor={CALDARI:'#38bdf8',AMARR:'#fbbf24',MINMATAR:'#fb923c',GALLENTE:'#4ade80'}[faction]||'#475569';
   return (
     <div style={{display:'flex',alignItems:'center',gap:'10px',flexShrink:0}}>
       <div style={{width:'44px',height:'44px',borderRadius:'50%',flexShrink:0,
@@ -632,7 +662,9 @@ function EveHeader({label,hp,handCount,core,maxCore,isEnemy,isPlayer,turn,phaseL
         {isEnemy?'☠':'♦'}
       </div>
       <div style={{flex:1}}>
-        <div style={{fontFamily:'Orbitron',fontSize:'8px',letterSpacing:'3px',color:'#334155',marginBottom:'3px'}}>{label}</div>
+        <div style={{fontFamily:'Orbitron',fontSize:'8px',letterSpacing:'3px',color:'#334155',marginBottom:'3px'}}>
+            {label}{faction&&<span style={{marginLeft:'8px',color:factionColor,borderLeft:`1px solid ${factionColor}`,paddingLeft:'6px',letterSpacing:'2px'}}>{faction}</span>}
+          </div>
         <div onClick={isTargetable?onTarget:undefined} style={{cursor:isTargetable?'pointer':'default',display:'flex',alignItems:'center',gap:'8px',padding:isTargetable?'3px 6px':0,border:isTargetable?'1px solid #f43f5e55':'1px solid transparent',borderRadius:'6px',background:isTargetable?'rgba(244,63,94,.07)':'transparent',transition:'all .2s'}}>
           {isTargetable&&<span style={{fontFamily:'Orbitron',fontSize:'7px',color:'#f43f5e',letterSpacing:'2px'}}>🎯 TARGET POD</span>}
 
@@ -928,58 +960,146 @@ function LogDrawer({open, onToggle, toasts}) {
 
 // ── INTRO ─────────────────────────────────────────────────────────────────────
 function Intro({onStart}) {
+  const [selected, setSelected] = useState(null);
   const factions=[
-    {name:'CALDARI',color:'#38bdf8',ships:'Merlin · Caracal · Drake · Raven',style:'Missiles & back-row fire support'},
-    {name:'AMARR',color:'#fbbf24',ships:'Punisher · Revelation',style:'Armor tanking & Doomsday devastation'},
-    {name:'MINMATAR',color:'#fb923c',ships:'Rifter · Stiletto · Tempest',style:'Speed, nullifiers & artillery burst'},
-    {name:'GALLENTE',color:'#4ade80',ships:'Vexor · Ishtar · Dominix',style:'Drone swarms & lifesteal sustained damage'},
+    {
+      id:'CALDARI', color:'#38bdf8', emblem:'🔵',
+      tagline:'State of Caldari',
+      ships:['Merlin','Caracal','Drake','Raven'],
+      playstyle:'Missiles & shield tech. Fire from safety with ranged ships in the back row.',
+      bonus:'4 ranged ships — strongest back-row potential',
+    },
+    {
+      id:'AMARR', color:'#fbbf24', emblem:'🟡',
+      tagline:'Amarr Empire',
+      ships:['Punisher','Revelation','Merlin','Stiletto'],
+      playstyle:'Thick armor and late-game Doomsday power. Survive until Revelation drops.',
+      bonus:'Revelation deals crush overflow — bleeds through blockers',
+    },
+    {
+      id:'MINMATAR', color:'#fb923c', emblem:'🔴',
+      tagline:'Minmatar Republic',
+      ships:['Rifter','Stiletto','Tempest'],
+      playstyle:'Fast and aggressive. Hit first, hit hard, bypass defenses with the Stiletto.',
+      bonus:'Rifter + Tempest both have Haste — instant pressure',
+    },
+    {
+      id:'GALLENTE', color:'#4ade80', emblem:'🟢',
+      tagline:'Gallente Federation',
+      ships:['Vexor','Ishtar','Dominix'],
+      playstyle:'Drone swarms and sustained attrition. Flood the field, heal, overwhelm.',
+      bonus:'Dominix spawns 2 Drone tokens — best board flooding faction',
+    },
   ];
+
   return (
-    <div style={{width:'100vw',height:'100vh',background:'#030712',display:'flex',alignItems:'center',justifyContent:'center',overflow:'auto',padding:'20px'}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Orbitron:wght@700;900&family=Share+Tech+Mono&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
-      <div style={{maxWidth:'600px',width:'100%',textAlign:'center'}}>
-        <div style={{fontFamily:'Orbitron',fontSize:'9px',letterSpacing:'7px',color:'#1e3a8a',marginBottom:'8px'}}>CAPSULEER BRIEFING</div>
-        <div style={{fontFamily:'Orbitron',fontWeight:900,fontSize:'36px',letterSpacing:'5px',
-          background:'linear-gradient(135deg,#38bdf8,#6366f1,#a78bfa)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',marginBottom:'4px'}}>
+    <div style={{width:'100vw',minHeight:'100vh',background:'#030712',
+      display:'flex',alignItems:'center',justifyContent:'center',
+      overflow:'auto',padding:'20px',fontFamily:"'Barlow Condensed',sans-serif"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Orbitron:wght@700;900&family=Share+Tech+Mono&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        @keyframes factionGlow{0%,100%{box-shadow:0 0 12px var(--fc)}50%{box-shadow:0 0 28px var(--fc),0 0 50px var(--fc)44}}
+        .faction-card{transition:all .2s;cursor:pointer}
+        .faction-card:hover{transform:translateY(-3px)}
+      `}</style>
+
+      <div style={{maxWidth:'560px',width:'100%',textAlign:'center'}}>
+        {/* Title */}
+        <div style={{fontFamily:'Orbitron',fontSize:'8px',letterSpacing:'7px',color:'#1e3a8a',marginBottom:'8px'}}>
+          CAPSULEER AUTHENTICATION
+        </div>
+        <div style={{fontFamily:'Orbitron',fontWeight:900,fontSize:'34px',letterSpacing:'5px',
+          background:'linear-gradient(135deg,#38bdf8,#6366f1,#a78bfa)',
+          WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent',marginBottom:'2px'}}>
           NEW EDEN
         </div>
-        <div style={{fontFamily:'Orbitron',fontWeight:700,fontSize:'13px',letterSpacing:'8px',color:'#1e3a8a',marginBottom:'28px'}}>PROTOCOL</div>
+        <div style={{fontFamily:'Orbitron',fontWeight:700,fontSize:'12px',letterSpacing:'8px',
+          color:'#1e3a8a',marginBottom:'24px'}}>PROTOCOL</div>
 
-        {/* Factions */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'20px',textAlign:'left'}}>
-          {factions.map(f=>(
-            <div key={f.name} style={{padding:'10px 12px',background:'rgba(255,255,255,.02)',border:`1px solid ${f.color}33`,borderLeft:`3px solid ${f.color}`,borderRadius:'6px'}}>
-              <div style={{fontFamily:'Orbitron',fontSize:'9px',color:f.color,letterSpacing:'2px',marginBottom:'4px'}}>{f.name}</div>
-              <div style={{fontFamily:'Share Tech Mono',fontSize:'9px',color:'#334155',marginBottom:'3px'}}>{f.ships}</div>
-              <div style={{fontFamily:'Share Tech Mono',fontSize:'8px',color:'#1e293b'}}>{f.style}</div>
-            </div>
-          ))}
+        {/* Step label */}
+        <div style={{fontFamily:'Orbitron',fontSize:'9px',letterSpacing:'4px',
+          color:'#334155',marginBottom:'12px'}}>
+          SELECT YOUR FACTION
         </div>
 
-        {/* Rules */}
-        <div style={{display:'flex',flexDirection:'column',gap:'5px',marginBottom:'24px',textAlign:'left'}}>
+        {/* Faction cards */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'20px',textAlign:'left'}}>
+          {factions.map(f=>{
+            const isSel = selected===f.id;
+            return (
+              <div key={f.id}
+                className="faction-card"
+                onClick={()=>setSelected(f.id)}
+                style={{'--fc':`${f.color}66`,
+                  padding:'14px',
+                  background:isSel?`${f.color}12`:'rgba(255,255,255,.02)',
+                  border:`2px solid ${isSel?f.color:f.color+'33'}`,
+                  borderRadius:'10px',
+                  animation:isSel?'factionGlow 2s ease-in-out infinite':'none',
+                  boxShadow:isSel?`0 0 20px ${f.color}33`:'none',
+                }}>
+                <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}}>
+                  <div style={{fontSize:'20px',lineHeight:1}}>{f.emblem}</div>
+                  <div>
+                    <div style={{fontFamily:'Orbitron',fontSize:'11px',fontWeight:700,
+                      color:isSel?f.color:'#94a3b8',letterSpacing:'2px',lineHeight:1}}>{f.id}</div>
+                    <div style={{fontFamily:'Share Tech Mono',fontSize:'8px',color:'#1e293b',marginTop:'1px'}}>{f.tagline}</div>
+                  </div>
+                  {isSel&&<div style={{marginLeft:'auto',fontFamily:'Orbitron',fontSize:'10px',color:f.color}}>✓</div>}
+                </div>
+                <div style={{fontFamily:'Share Tech Mono',fontSize:'9px',color:'#475569',lineHeight:1.5,marginBottom:'6px'}}>
+                  {f.playstyle}
+                </div>
+                <div style={{fontFamily:'Share Tech Mono',fontSize:'8px',color:`${f.color}99`,
+                  borderTop:`1px solid ${f.color}22`,paddingTop:'5px'}}>
+                  {f.bonus}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Rules summary */}
+        <div style={{display:'flex',flexDirection:'column',gap:'4px',marginBottom:'20px',textAlign:'left'}}>
           {[
-            {k:'FRONT LINE',c:'#fb923c',v:'Ships here block attackers. All ships can attack from front.'},
-            {k:'BACK ROW',c:'#34d399',v:'Safe from direct attack. Only RANGED ships (Caracal, Drake) can fire from here.'},
-            {k:'NULLIFIER',c:'#c084fc',v:'Stiletto bypasses all rows — hits the enemy pod directly.'},
-            {k:'DOOMSDAY',c:'#f97316',v:"Revelation's excess combat damage bleeds through to the enemy pod."},
-            {k:'DRONES',c:'#4ade80',v:'Vexor spawns 1 Drone (1/1), Dominix spawns 2. Drones appear on your front line.'},
-            {k:'BURST',c:'#dc2626',v:"Tempest deals DOUBLE damage on its first attack ever."},
-            {k:'VOLLEY',c:'#0369a1',v:'Raven hits all enemy ships for 1 on top of normal combat damage.'},
-            {k:'LIFESTEAL',c:'#22c55e',v:'Ishtar heals 1 HP back to itself after each attack it survives.'},
+            {k:'FRONT LINE',c:'#fb923c',v:'Blocks attackers. All ships can attack from here.'},
+            {k:'BACK ROW',c:'#34d399',v:'Safe zone — only RANGED ships (Caracal, Drake) fire from here.'},
+            {k:'NULLIFIER',c:'#c084fc',v:'Stiletto bypasses all rows, hits enemy pod directly.'},
+            {k:'DOOMSDAY',c:'#f97316',v:"Revelation bleeds excess damage through to the pod."},
           ].map(({k,c,v})=>(
-            <div key={k} style={{display:'flex',gap:'10px',padding:'5px 10px',background:'rgba(255,255,255,.015)',border:'1px solid rgba(255,255,255,.04)',borderRadius:'6px',alignItems:'flex-start'}}>
-              <div style={{fontFamily:'Orbitron',fontSize:'7.5px',color:c,minWidth:'78px',flexShrink:0,paddingTop:'2px',letterSpacing:'1px'}}>{k}</div>
-              <div style={{fontFamily:'Share Tech Mono',fontSize:'10px',color:'#475569',lineHeight:1.5}}>{v}</div>
+            <div key={k} style={{display:'flex',gap:'10px',padding:'5px 8px',
+              background:'rgba(255,255,255,.015)',borderRadius:'5px',alignItems:'flex-start'}}>
+              <div style={{fontFamily:'Orbitron',fontSize:'7px',color:c,minWidth:'75px',
+                flexShrink:0,paddingTop:'2px',letterSpacing:'1px'}}>{k}</div>
+              <div style={{fontFamily:'Share Tech Mono',fontSize:'9px',color:'#334155',lineHeight:1.45}}>{v}</div>
             </div>
           ))}
         </div>
 
-        <button onClick={onStart} style={{background:'rgba(56,189,248,.08)',border:'2px solid #38bdf855',color:'#38bdf8',
-          padding:'14px 48px',fontFamily:'Orbitron',fontWeight:700,fontSize:'13px',letterSpacing:'5px',
-          cursor:'pointer',borderRadius:'8px',boxShadow:'0 0 30px #38bdf822',
-          textShadow:'0 0 12px #38bdf8',transition:'all .2s'}}>
-          ⟶ WARP IN
+        {/* Warp button */}
+        <button
+          onClick={()=>selected&&onStart(selected)}
+          disabled={!selected}
+          style={{
+            width:'100%',padding:'15px',
+            background:selected
+              ?`${factions.find(f=>f.id===selected)?.color}18`
+              :'rgba(255,255,255,.03)',
+            border:`2px solid ${selected
+              ?factions.find(f=>f.id===selected)?.color+'88'
+              :'rgba(255,255,255,.08)'}`,
+            color:selected
+              ?factions.find(f=>f.id===selected)?.color
+              :'#1e293b',
+            fontFamily:'Orbitron',fontWeight:700,fontSize:'13px',letterSpacing:'5px',
+            cursor:selected?'pointer':'not-allowed',
+            borderRadius:'10px',
+            boxShadow:selected?`0 0 30px ${factions.find(f=>f.id===selected)?.color}22`:'none',
+            textShadow:selected?`0 0 12px ${factions.find(f=>f.id===selected)?.color}`:'none',
+            transition:'all .25s',
+          }}>
+          {selected?`⟶ WARP IN AS ${selected}`:'SELECT A FACTION ABOVE'}
         </button>
         <div style={{fontFamily:'Share Tech Mono',fontSize:'9px',color:'#0f172a',marginTop:'10px'}}>
           No API key needed · 20 unique cards · 4 factions
