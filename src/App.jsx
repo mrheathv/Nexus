@@ -514,8 +514,28 @@ export default function App() {
           attackers={g.attackers} canTarget={canHealShip()} canAttack={canAttack}
           onShipClick={u=>{if(canHealShip())handleTarget('player-ship',u.uid);else toggleAttacker(u.uid);}}/>
 
-        {/* Player header */}
-        <EveHeader label="YOUR CAPSULEER" hp={g.player.hp} core={g.player.core} maxCore={g.player.maxCore} isPlayer/>
+        {/* Player compact status */}
+        <div style={{display:'flex',alignItems:'center',gap:'10px',flexShrink:0,padding:'2px 4px'}}>
+          <div style={{width:'32px',height:'32px',borderRadius:'50%',flexShrink:0,
+            background:'linear-gradient(135deg,#0c4a6e,#075985)',
+            border:'2px solid #0284c744',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',
+            boxShadow:'0 0 14px #0284c722'}}>♦</div>
+          <div style={{lineHeight:1}}>
+            <div style={{fontFamily:'Orbitron',fontWeight:700,fontSize:'22px',
+              color:g.player.hp>12?'#38bdf8':g.player.hp>6?'#fbbf24':'#f43f5e',
+              textShadow:`0 0 12px ${g.player.hp>12?'rgba(56,189,248,.5)':g.player.hp>6?'rgba(251,191,36,.5)':'rgba(244,63,94,.5)'}`}}>
+              {g.player.hp}
+            </div>
+            <div style={{fontFamily:'Orbitron',fontSize:'6px',color:'#1e3a5f',letterSpacing:'2px'}}>HULL</div>
+          </div>
+          <div style={{flex:1,height:'5px',background:'rgba(255,255,255,.06)',borderRadius:'3px',overflow:'hidden'}}>
+            <div style={{height:'100%',width:`${Math.max(0,g.player.hp/20*100)}%`,
+              background:g.player.hp>12?'#38bdf8':g.player.hp>6?'#fbbf24':'#f43f5e',
+              borderRadius:'3px',transition:'width .4s'}}/>
+          </div>
+          <CapBar core={g.player.core} max={g.player.maxCore}/>
+        </div>
 
         {/* Hand */}
         <Hand cards={g.player.hand} selected={g.selectedCard} pendingUid={g.pendingDeploy?.uid}
@@ -714,7 +734,7 @@ function Hand({cards,selected,pendingUid,core,phase,onSelect,onActivate}) {
             {/* CARD */}
             <div className="card-hand"
               onClick={()=>isSel?null:onSelect(card.uid)}
-              style={{width:'86px',minHeight:'118px',
+              style={{width:'96px',minHeight:'132px',
                 background:`linear-gradient(175deg,#0d1629,#080e1c,${card.color}1e)`,
                 border:`2px solid ${isSel?card.color:affordable?card.color+'44':'#1e293b'}`,
                 borderRadius:'11px',padding:'7px 5px 6px',textAlign:'center',position:'relative',
@@ -739,15 +759,15 @@ function Hand({cards,selected,pendingUid,core,phase,onSelect,onActivate}) {
                 borderRadius:'50%',background:card.color,boxShadow:`0 0 8px ${card.color}`,zIndex:2}}/>
 
               {/* Art area: pixel art + SVG silhouette */}
-              <div style={{position:'relative',width:'100%',height:'46px',
+              <div style={{position:'relative',width:'100%',height:'54px',
                 display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'4px',overflow:'hidden'}}>
                 {/* SVG background silhouette */}
                 <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',opacity:.45}}>
-                  <ShipSVG id={card.id} color={card.color} size={44}/>
+                  <ShipSVG id={card.id} color={card.color} size={50}/>
                 </div>
                 {/* Pixel art portrait */}
                 <div style={{position:'relative',zIndex:1,filter:`drop-shadow(0 0 4px ${card.color})`}}>
-                  <PixelArt cardId={card.id} color={card.color} px={4}/>
+                  <PixelArt cardId={card.id} color={card.color} px={5}/>
                 </div>
               </div>
 
