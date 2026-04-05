@@ -293,7 +293,7 @@ export default function App() {
     const card=g.player.hand.find(c=>c.uid===cUid);
     if(!card||card.cost>g.player.core) return;
     if(card.type==='ship'&&row){ deployToRow(row); return; }
-    if(card.type==='ship'){ setG(s=>({...s,pendingDeploy:card,selectedCard:cUid})); return; }
+    if(card.type==='ship'){ return; } // ship deploy handled via action bar
     // Module
     setG(s=>{
       const c=s.player.hand.find(x=>x.uid===cUid); if(!c||c.cost>s.player.core) return s;
@@ -312,17 +312,18 @@ export default function App() {
   };
 
   const deployToRow = row => {
-    if(!g?.pendingDeploy) return;
-    const card=g.pendingDeploy;
-    if(card.cost>g.player.core) return;
+    // Works from either selectedCard (ship selected in hand) or pendingDeploy (legacy)
+    const card = g?.player.hand.find(c=>c.uid===g?.selectedCard) || g?.pendingDeploy;
+    if(!card||card.cost>g.player.core) return;
     setG(s=>{
-      const c=s.pendingDeploy; if(!c||c.cost>s.player.core) return s;
+      const selCard = s.player.hand.find(c=>c.uid===s.selectedCard) || s.pendingDeploy;
+      const c=selCard; if(!c||c.cost>s.player.core) return s;
       const unit={...c,currentHp:c.def,tapped:c.ability!=='haste',justPlayed:c.ability!=='haste',row};
       let pField=[...s.player.field,unit];
       if(c.ability==='drones')  pField=spawnDrones(pField,1);
       if(c.ability==='drones2') pField=spawnDrones(pField,2);
       let ns={...s,pendingDeploy:null,selectedCard:null,
-        player:{...s.player,core:s.player.core-c.cost,hand:s.player.hand.filter(x=>x.uid!==c.uid),field:pField}};
+        player:{...s.player,core:s.player.core-c.cost,hand:s.player.hand.filter(x=>x.uid!==c.uid&&x.uid!==selCard?.uid),field:pField}};
       ns=addToast(ns,`${c.name} on grid — ${row.toUpperCase()}`,'#60a5fa');
       return checkWinner(ns);
     });
@@ -498,9 +499,12 @@ export default function App() {
         <ActionBar phase={g.phase} isPending={isPending} pendingName={g.pendingDeploy?.name}
           isTargeting={isTargeting} targetName={g.targeting?.name}
           attackerCount={g.attackers.length} isAiTurn={isAiTurn}
+          selectedCard={g.selectedCard?g.player.hand.find(c=>c.uid===g.selectedCard):null}
           onAttack={goAttack} onResolve={resolveAttack} onEndTurn={endTurn}
           onFront={()=>deployToRow('front')} onBack={()=>deployToRow('back')}
-          onCancelDeploy={cancelDeploy} onCancelTarget={cancelTgt}/>
+          onCancelDeploy={cancelDeploy} onCancelTarget={cancelTgt}
+          onUseModule={()=>{ if(g.selectedCard){ activateCard(g.selectedCard); }}}
+          onCancelSelect={()=>setG(s=>({...s,selectedCard:null}))}/>
 
         {/* Player zones */}
         <BattleRow label="FRONT LINE" ships={frontOf(g.player.field)} isPlayer isFront
@@ -640,25 +644,46 @@ function BattleRow({label,ships,isPlayer,isFront,attackers=[],canTarget,canAttac
 
 // ── ACTION BAR ────────────────────────────────────────────────────────────────
 function ActionBar({phase,isPending,pendingName,isTargeting,targetName,attackerCount,isAiTurn,
-  onAttack,onResolve,onEndTurn,onFront,onBack,onCancelDeploy,onCancelTarget}) {
+  selectedCard,onAttack,onResolve,onEndTurn,onFront,onBack,onCancelDeploy,onCancelTarget,onUseModule,onCancelSelect}) {
+  const isShipSelected = selectedCard?.type==='ship';
+  const isModuleSelected = selectedCard?.type==='module';
+  const hasSelection = !!selectedCard;
   return (
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',
-      padding:'6px 14px',background:'rgba(6,13,26,.85)',
-      border:'1px solid rgba(255,255,255,.05)',borderRadius:'8px',
-      backdropFilter:'blur(10px)',flexShrink:0,minHeight:'50px'}}>
-      {isPending&&<>
+      padding:'6px 14px',background:'rgba(6,13,26,.9)',
+      border:'1px solid rgba(255,255,255,.06)',borderRadius:'8px',
+      backdropFilter:'blur(12px)',flexShrink:0,minHeight:'54px',flexWrap:'wrap'}}>
+      {/* Ship selected — show row picker */}
+      {isShipSelected&&!isPending&&!isTargeting&&phase==='player-play'&&<>
+        <span style={{fontFamily:'Orbitron',fontSize:'9px',color:'#60a5fa',letterSpacing:'1px'}}>
+          DEPLOY <b style={{color:selectedCard.color}}>{selectedCard.name}</b> TO:
+        </span>
+        <Btn label="▲ FRONT LINE" color="#38bdf8" onClick={onFront}/>
+        <Btn label="▼ BACK ROW" color="#34d399" onClick={onBack}/>
+        <Btn label="✕" color="#64748b" onClick={onCancelSelect} small/>
+      </>}
+      {/* Module selected — show use button */}
+      {isModuleSelected&&!isPending&&!isTargeting&&phase==='player-play'&&<>
+        <span style={{fontFamily:'Orbitron',fontSize:'9px',color:'#60a5fa',letterSpacing:'1px'}}>
+          ACTIVATE <b style={{color:selectedCard.color}}>{selectedCard.name}</b>?
+        </span>
+        <Btn label={`⚡ USE — ${selectedCard.name}`} color={selectedCard.color} onClick={onUseModule}/>
+        <Btn label="✕" color="#64748b" onClick={onCancelSelect} small/>
+      </>}
+      {/* Pending deploy (from old flow, kept as fallback) */}
+      {isPending&&!isShipSelected&&<>
         <span style={{fontFamily:'Orbitron',fontSize:'9px',color:'#60a5fa',letterSpacing:'1px'}}>DEPLOY <b style={{color:'#f1f5f9'}}>{pendingName}</b> TO ROW:</span>
         <Btn label="▲ FRONT LINE" color="#38bdf8" onClick={onFront}/>
         <Btn label="▼ BACK ROW" color="#34d399" onClick={onBack}/>
         <Btn label="✕" color="#64748b" onClick={onCancelDeploy} small/>
       </>}
-      {isTargeting&&!isPending&&<>
+      {isTargeting&&<>
         <span style={{fontFamily:'Orbitron',fontSize:'9px',color:'#fbbf24',letterSpacing:'1px'}}>🎯 {targetName} — CLICK A TARGET ON THE BOARD ABOVE</span>
         <Btn label="✕ CANCEL" color="#64748b" onClick={onCancelTarget} small/>
       </>}
-      {!isPending&&!isTargeting&&<>
-        {phase==='player-play'&&<><Btn label="⚔ ENGAGE PHASE" color="#fb923c" onClick={onAttack}/><span style={{fontFamily:'Share Tech Mono',fontSize:'10px',color:'#1e293b'}}>Click a card below to select it, then choose an action in the popup</span></>}
-        {phase==='player-attack'&&<><Btn label={`✓ RESOLVE${attackerCount?` (${attackerCount} ships)`:''}`} color="#fb923c" onClick={onResolve} active={attackerCount>0}/><span style={{fontFamily:'Share Tech Mono',fontSize:'10px',color:'#1e293b'}}>Click your ships to declare attackers · front row + ranged only</span></>}
+      {!hasSelection&&!isPending&&!isTargeting&&<>
+        {phase==='player-play'&&<><Btn label="⚔ ENGAGE PHASE" color="#fb923c" onClick={onAttack}/><span style={{fontFamily:'Share Tech Mono',fontSize:'10px',color:'#1e293b'}}>Click a card below to select it</span></>}
+        {phase==='player-attack'&&<><Btn label={`✓ RESOLVE${attackerCount?` (${attackerCount})`:''}`} color="#fb923c" onClick={onResolve} active={attackerCount>0}/><span style={{fontFamily:'Share Tech Mono',fontSize:'10px',color:'#1e293b'}}>Click your ships to declare attackers</span></>}
         {isAiTurn&&<span style={{fontFamily:'Orbitron',fontSize:'9px',color:'#f43f5e',letterSpacing:'3px'}} className="ai-blink">⟳ ENEMY FLEET ACTIVE...</span>}
         <Btn label="END TURN ▶" color="#38bdf8" disabled={phase==='ai-turn'||phase==='game-over'} onClick={onEndTurn}/>
       </>}
@@ -685,20 +710,7 @@ function Hand({cards,selected,pendingUid,core,phase,onSelect,onActivate}) {
         const ci=i-Math.floor(cards.length/2);
         return (
           <div key={card.uid} style={{position:'relative',flexShrink:0,zIndex:isSel?50:20-Math.abs(ci)}}>
-            {/* POPUP */}
-            {isSel&&affordable&&(
-              <div className="popup-in" style={{position:'absolute',bottom:'calc(100% + 6px)',left:'50%',transform:'translateX(-50%)',
-                background:'rgba(6,13,26,.96)',border:'1px solid rgba(255,255,255,.12)',
-                borderRadius:'8px',padding:'6px',display:'flex',gap:'5px',whiteSpace:'nowrap',
-                backdropFilter:'blur(12px)',boxShadow:'0 -8px 24px rgba(0,0,0,.6)',zIndex:100}}>
-                {card.type==='ship'&&<>
-                  <button onClick={()=>{onActivate(card.uid,'front');}} style={{background:'rgba(56,189,248,.15)',border:'1px solid #38bdf866',color:'#38bdf8',padding:'5px 9px',fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'1.5px',cursor:'pointer',borderRadius:'5px'}}>▲ FRONT</button>
-                  <button onClick={()=>{onActivate(card.uid,'back');}} style={{background:'rgba(52,211,153,.12)',border:'1px solid #34d39966',color:'#34d399',padding:'5px 9px',fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'1.5px',cursor:'pointer',borderRadius:'5px'}}>▼ BACK</button>
-                </>}
-                {card.type==='module'&&<button onClick={()=>onActivate(card.uid)} style={{background:`${card.color}18`,border:`1px solid ${card.color}66`,color:card.color,padding:'5px 12px',fontFamily:'Orbitron',fontSize:'7px',letterSpacing:'1.5px',cursor:'pointer',borderRadius:'5px'}}>⚡ USE</button>}
-                <button onClick={()=>onSelect(null)} style={{background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.1)',color:'#64748b',padding:'5px 8px',fontFamily:'Orbitron',fontSize:'7px',cursor:'pointer',borderRadius:'5px'}}>✕</button>
-              </div>
-            )}
+            {/* No popup — actions live in the action bar for reliable clicking */}
             {/* CARD */}
             <div className="card-hand"
               onClick={()=>isSel?null:onSelect(card.uid)}
@@ -750,7 +762,8 @@ function Hand({cards,selected,pendingUid,core,phase,onSelect,onActivate}) {
                 </div>
               )}
               <div style={{fontFamily:'Share Tech Mono',fontSize:'7px',color:'#1e3a5f',lineHeight:1.35}}>{card.effect}</div>
-              {!isSel&&affordable&&<div style={{position:'absolute',bottom:'-12px',left:'50%',transform:'translateX(-50%)',fontFamily:'Orbitron',fontSize:'6px',color:card.color,whiteSpace:'nowrap',opacity:.8}}>▲ CLICK</div>}
+              {affordable&&!isSel&&<div style={{position:'absolute',bottom:'-13px',left:'50%',transform:'translateX(-50%)',fontFamily:'Orbitron',fontSize:'6px',color:card.color,whiteSpace:'nowrap',opacity:.7,pointerEvents:'none'}}>▲ SELECT</div>}
+              {isSel&&affordable&&<div style={{position:'absolute',bottom:'-13px',left:'50%',transform:'translateX(-50%)',fontFamily:'Orbitron',fontSize:'6px',color:'#f1f5f9',whiteSpace:'nowrap',fontWeight:'bold',pointerEvents:'none'}}>↑ CHOOSE ROW ABOVE</div>}
             </div>
           </div>
         );
